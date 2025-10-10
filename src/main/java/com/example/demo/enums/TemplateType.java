@@ -1,0 +1,10 @@
+package com.example.demo.enums;
+
+public enum TemplateType {
+    ACCOUNT_OPENING_RECEIPT,
+    INTEREST_PAYMENT_ALERT,
+    TRANSACTION_ALERT,
+    MATURITY_NOTICE,
+    ACCOUNT_CLOSURE_CONFIRMATION
+
+}

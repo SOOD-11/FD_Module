@@ -1,0 +1,46 @@
+version: '3.8'
+services:
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      CLUSTER_ID: 'ldI327czT664YwTqN--gSg=='
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:9093'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+
+      # --- IMPORTANT NETWORKING CHANGES ---
+      # Tells Kafka about three "listeners": one for external traffic from your PC (PLAINTEXT),
+      # one for internal traffic between containers (INTERNAL), and one for the controller.
+      KAFKA_LISTENERS: 'PLAINTEXT://:9092,CONTROLLER://:9093,INTERNAL://:29092'
+      
+      # Tells clients how to connect. External clients (Spring app) use localhost:9092.
+      # Internal clients (Kafka-UI) use kafka:29092.
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://localhost:9092,INTERNAL://kafka:29092'
+      
+      # Maps the listener names to security protocols.
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT'
+      
+      # Specifies that inter-broker communication should use the internal listener.
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'INTERNAL'
+      # --- END OF CHANGES ---
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8085:8080"
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_CLUSTERS_0_NAME: 'local-kafka'
+      # --- IMPORTANT CHANGE: Connect to the INTERNAL listener ---
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: 'kafka:29092'
