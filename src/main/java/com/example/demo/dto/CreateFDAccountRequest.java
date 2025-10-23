@@ -1,41 +1,22 @@
 package com.example.demo.dto;
 
-import java.math.BigDecimal;
-
-import jakarta.validation.constraints.DecimalMin;
-import jakarta.validation.constraints.Digits;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
-import lombok.Data;
 
-
-
-
+@Schema(description = "Request object for creating a new Fixed Deposit account")
 public record CreateFDAccountRequest(
 		
-		
-		
-			    @NotBlank(message = "Account name is mandatory")
-			    String accountName,
+		    @Schema(description = "Name of the FD account", example = "My Savings FD", required = true)
+		    @NotBlank(message = "Account name is mandatory")
+		    String accountName,
 
-			    @NotBlank(message = "Product code is mandatory")
-			    String productCode,
-
-			    @NotBlank(message = "Primary customer ID is mandatory")
-			    String customerId,
-
-			    @Positive(message = "Term must be a positive number")
-			    Integer termInMonths, // Optional
-
-			    @DecimalMin(value = "0.0", inclusive = false, message = "Interest rate must be positive")
-			    @Digits(integer=3, fraction=2, message = "Invalid interest rate format")
-			    BigDecimal interestRate, // Optional
-
-			    @NotNull(message = "Principal amount is mandatory")
-			    @Positive(message = "Principal amount must be positive")
-			    BigDecimal principalAmount
-			) {}	
+		    @Schema(description = "Calculation ID from FD calculation service", example = "123", required = true)
+		    @NotNull(message = "Calculation ID is mandatory")
+		    @Positive(message = "Calculation ID must be positive")
+		    Long calcId
+		) {}	
 		
 		
 		

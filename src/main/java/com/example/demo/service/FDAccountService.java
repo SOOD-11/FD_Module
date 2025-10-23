@@ -12,7 +12,7 @@ import com.example.demo.dto.PrematureWithdrawalInquiryResponse;
 
 public  interface  FDAccountService {
 	
-	FDAccountView createAccount(CreateFDAccountRequest request);
+	FDAccountView createAccount(CreateFDAccountRequest request, String customerId);
     FDAccountView findAccountByNumber(String accountNumber);
     List<FDAccountView> findAccounts(String idType, String value);
     List<FDTransactionView> getTransactionsForAccount(String accountNumber);

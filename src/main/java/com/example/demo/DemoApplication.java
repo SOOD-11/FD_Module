@@ -8,8 +8,6 @@ import org.springframework.context.annotation.ComponentScan;
 @SpringBootApplication
 @EnableBatchProcessing // Add this annotation to enable Spring Batch
 //ADD THIS LINE to scan all our project packages
-@ComponentScan(basePackages = "com.example.demo")
-
 public class DemoApplication {
 
 	public static void main(String[] args) {

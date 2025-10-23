@@ -6,7 +6,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -18,10 +17,13 @@ import com.example.demo.dto.AddAccountHolderRequest;
 import com.example.demo.dto.CreateFDAccountRequest;
 import com.example.demo.dto.EarlyWithdrawlRequest;
 import com.example.demo.dto.FDAccountView;
+import com.example.demo.dto.FDCalculationResponse;
 import com.example.demo.dto.FDTransactionView;
 import com.example.demo.dto.PrematureWithdrawalInquiryResponse;
+import com.example.demo.dto.ProductDetailsResponse;
 import com.example.demo.entities.Accountholder;
 import com.example.demo.entities.FdAccount;
+import com.example.demo.entities.FdAccountBalance;
 import com.example.demo.entities.FdTransaction;
 
 import com.example.demo.enums.AccountStatus;
@@ -30,11 +32,15 @@ import com.example.demo.enums.RoleType;
 import com.example.demo.enums.TransactionType;
 import com.example.demo.events.AccountClosedEvent;
 import com.example.demo.events.AccountCreatedEvent;
+import com.example.demo.events.CommunicationEvent;
 import com.example.demo.exception.ResourceNotFoundException;
+import com.example.demo.repository.FdAccountBalanceRepository;
 import com.example.demo.repository.FdAccountRepository;
 import com.example.demo.repository.FdTransactionRepository;
 import com.example.demo.service.FDAccountService;
+import com.example.demo.service.FDCalculationService;
 import com.example.demo.service.KafkaProducerService;
+import com.example.demo.service.ProductService;
 import com.example.demo.util.AccountNumberGenerator;
 
 import lombok.RequiredArgsConstructor;
@@ -42,59 +48,79 @@ import lombok.extern.slf4j.Slf4j;
 
 
 @Slf4j
-
 @Service
-
 @Transactional
-
 @RequiredArgsConstructor
 public class FDAccountServiceImpl implements FDAccountService{
 	
-	private final FdAccountRepository fdAccountRepository ;
-    private final AccountNumberGenerator accountNumberGenerator ;
-private final KafkaProducerService kafkaProducerService;
-private final FdTransactionRepository transactionRepository;
+	private final FdAccountRepository fdAccountRepository;
+    private final AccountNumberGenerator accountNumberGenerator;
+    private final KafkaProducerService kafkaProducerService;
+    private final FdTransactionRepository transactionRepository;
+    private final FDCalculationService fdCalculationService;
+    private final ProductService productService;
+    private final FdAccountBalanceRepository balanceRepository;
 
-    public FDAccountView createAccount(CreateFDAccountRequest request) {
-        log.info("Creating new FD account for customer: {}", request.customerId());
+    @Override
+    public FDAccountView createAccount(CreateFDAccountRequest request, String customerId) {
+        log.info("Creating new FD account for customer: {} with calcId: {}", customerId, request.calcId());
 
-        // Step 2: Handle default vs. custom values
-        Integer term = Objects.requireNonNullElse(request.termInMonths(), 12); // Default 12 months
-        BigDecimal rate = Objects.requireNonNullElse(request.interestRate(), new BigDecimal("5.00")); // Default 5.00%
-        // TODO: In a real app, validate custom term/rate against product limits
+        // Step 1: Fetch calculation details from FD Calculation Service
+        FDCalculationResponse calculation = fdCalculationService.getCalculation(request.calcId());
+        log.info("Fetched calculation details: maturityValue={}, maturityDate={}", 
+                 calculation.getMaturityValue(), calculation.getMaturityDate());
 
-        // Step 3: Generate account number
+        // Step 2: Generate account number
         String accountNumber = accountNumberGenerator.generate();
 
-        // Step 4: Calculations
+        // Step 3: Calculate term in months from effective date to maturity date
         LocalDate effectiveDate = LocalDate.now();
-        LocalDate maturityDate = effectiveDate.plusMonths(term);
-        BigDecimal maturityAmount = calculateMaturityAmount(request.principalAmount(), rate, term);
+        LocalDate maturityDate = calculation.getMaturityDate();
+        Integer termInMonths = (int) ChronoUnit.MONTHS.between(effectiveDate, maturityDate);
+
+        // Step 4: Calculate principal amount from maturity value (reverse calculation)
+        // For now, we'll need to get this from the calculation or make an assumption
+        // Assuming the calculation service should provide principal, but if not available:
+        BigDecimal principalAmount = calculatePrincipalFromMaturity(
+            calculation.getMaturityValue(), 
+            calculation.getEffectiveRate(), 
+            termInMonths
+        );
 
         // Step 5: Build FDAccount entity
         FdAccount fdAccount = new FdAccount();
         fdAccount.setAccountNumber(accountNumber);
         fdAccount.setAccountName(request.accountName());
-        fdAccount.setProductCode(request.productCode());
+        fdAccount.setProductCode(calculation.getProductCode()); // Get product code from calculation response
         fdAccount.setStatus(AccountStatus.ACTIVE);
-        fdAccount.setTermInMonths(term);
-        fdAccount.setInterestRate(rate);
-        fdAccount.setPrincipalAmount(request.principalAmount());
-        fdAccount.setMaturityAmount(maturityAmount);
+        fdAccount.setTermInMonths(termInMonths);
+        fdAccount.setInterestRate(calculation.getEffectiveRate());
+        fdAccount.setPrincipalAmount(principalAmount);
+        fdAccount.setMaturityAmount(calculation.getMaturityValue());
         fdAccount.setEffectiveDate(effectiveDate);
         fdAccount.setMaturityDate(maturityDate);
-        fdAccount.setMaturityInstruction(MaturityInstruction.PAYOUT_TO_LINKED_ACCOUNT); // Default instruction
+        fdAccount.setMaturityInstruction(MaturityInstruction.PAYOUT_TO_LINKED_ACCOUNT);
+        
+        // Set additional calculation fields
+        fdAccount.setCalcId(calculation.getCalcId());
+        fdAccount.setResultId(calculation.getResultId());
+        fdAccount.setApy(calculation.getApy());
+        fdAccount.setEffectiveRate(calculation.getEffectiveRate());
+        fdAccount.setPayoutFreq(calculation.getPayoutFreq());
+        fdAccount.setPayoutAmount(calculation.getPayoutAmount());
+        fdAccount.setCategory1Id(calculation.getCategory1Id());
+        fdAccount.setCategory2Id(calculation.getCategory2Id());
 
-        // Step 6: Build AccountHolder entity
+        // Step 6: Build AccountHolder entity (using customerId from JWT)
         Accountholder owner = new Accountholder();
-        owner.setCustomerId(request.customerId());
+        owner.setCustomerId(customerId);
         owner.setRoleType(RoleType.OWNER);
         owner.setOwnershipPercentage(new BigDecimal("100.00"));
 
         // Step 7: Build initial Transaction entity
         FdTransaction initialDeposit = new FdTransaction();
         initialDeposit.setTransactionType(TransactionType.PRINCIPAL_DEPOSIT);
-        initialDeposit.setAmount(request.principalAmount());
+        initialDeposit.setAmount(principalAmount);
         initialDeposit.setTransactionDate(LocalDateTime.now());
         initialDeposit.setTransactionReference(UUID.randomUUID().toString());
         initialDeposit.setDescription("Initial principal deposit.");
@@ -109,18 +135,125 @@ private final FdTransactionRepository transactionRepository;
         FdAccount savedAccount = fdAccountRepository.save(fdAccount);
         log.info("Successfully created FD account with number: {}", savedAccount.getAccountNumber());
 
-        // Step 10: Publish Kafka event
+        // Step 10: Fetch product details and create balance types
+        ProductDetailsResponse product = productService.getProductDetails(calculation.getProductCode());
+        createAccountBalances(savedAccount, product, principalAmount);
+        
+        // Step 11: Publish Kafka event for account creation
         AccountCreatedEvent event = new AccountCreatedEvent(
                 savedAccount.getAccountNumber(),
-                request.customerId(),
+                customerId,  // Use customerId from JWT
                 savedAccount.getPrincipalAmount(),
                 savedAccount.getMaturityDate(),
                 UUID.randomUUID().toString()
         );
-      kafkaProducerService.sendAccountCreatedEvent(event);
+        kafkaProducerService.sendAccountCreatedEvent(event);
+        
+        // Step 12: Send communication events based on product configuration
+        sendCommunicationEvents(savedAccount, product, customerId, "COMM_OPENING");
 
-        // Step 11: Map to DTO and return
+        // Step 13: Map to DTO and return
         return mapToView(savedAccount);
+    }
+    
+    /**
+     * Create all balance types configured for the product
+     */
+    private void createAccountBalances(FdAccount account, ProductDetailsResponse product, BigDecimal principalAmount) {
+        if (product.getProductBalances() == null || product.getProductBalances().isEmpty()) {
+            log.warn("No balance types configured for product: {}", product.getProductCode());
+            return;
+        }
+        
+        for (ProductDetailsResponse.ProductBalance productBalance : product.getProductBalances()) {
+            if (!productBalance.getIsActive()) {
+                continue; // Skip inactive balance types
+            }
+            
+            FdAccountBalance balance = new FdAccountBalance();
+            balance.setFdAccount(account);
+            balance.setBalanceType(productBalance.getBalanceType());
+            balance.setIsActive(true);
+            balance.setCreatedAt(LocalDateTime.now());
+            
+            // Set initial balance amount based on type
+            switch (productBalance.getBalanceType()) {
+                case "FD_PRINCIPAL":
+                    balance.setBalanceAmount(principalAmount);
+                    break;
+                case "FD_INTEREST":
+                case "PENALTY":
+                    balance.setBalanceAmount(BigDecimal.ZERO);
+                    break;
+                default:
+                    balance.setBalanceAmount(BigDecimal.ZERO);
+            }
+            
+            balanceRepository.save(balance);
+            log.info("Created balance type: {} for account: {}", 
+                     balance.getBalanceType(), account.getAccountNumber());
+        }
+    }
+    
+    /**
+     * Send communication events based on product configuration
+     */
+    private void sendCommunicationEvents(FdAccount account, ProductDetailsResponse product, 
+                                         String customerId, String eventType) {
+        if (product.getProductCommunications() == null || product.getProductCommunications().isEmpty()) {
+            log.warn("No communication templates configured for product: {}", product.getProductCode());
+            return;
+        }
+        
+        for (ProductDetailsResponse.ProductCommunication comm : product.getProductCommunications()) {
+            if (!comm.getEvent().equals(eventType)) {
+                continue; // Only send communications matching the event type
+            }
+            
+            CommunicationEvent event = new CommunicationEvent();
+            event.setEventId(UUID.randomUUID().toString());
+            event.setAccountNumber(account.getAccountNumber());
+            event.setCustomerId(customerId);
+            event.setCommunicationType(comm.getCommunicationType());
+            event.setChannel(comm.getChannel());
+            event.setEventType(comm.getEvent());
+            event.setTemplate(comm.getTemplate());
+            event.setTimestamp(LocalDateTime.now());
+            
+            // Prepare template variables for placeholder replacement
+            event.setTemplateVariables(java.util.Map.of(
+                "CUSTOMER_NAME", customerId, // In real scenario, fetch from customer service
+                "PRODUCT_NAME", product.getProductName(),
+                "ACCOUNT_NUMBER", account.getAccountNumber(),
+                "DATE", LocalDate.now().toString(),
+                "PRINCIPAL_AMOUNT", account.getPrincipalAmount().toString(),
+                "MATURITY_DATE", account.getMaturityDate().toString()
+            ));
+            
+            kafkaProducerService.sendCommunicationEvent(event);
+            log.info("Sent {} communication via {} for account: {}", 
+                     comm.getCommunicationType(), comm.getChannel(), account.getAccountNumber());
+        }
+    }
+    
+    /**
+     * Helper method to calculate principal from maturity value
+     * This is a reverse calculation when maturity value is known
+     */
+    private BigDecimal calculatePrincipalFromMaturity(BigDecimal maturityValue, 
+                                                      BigDecimal interestRate, 
+                                                      Integer termInMonths) {
+        if (interestRate == null || interestRate.compareTo(BigDecimal.ZERO) == 0) {
+            return maturityValue; // No interest, principal equals maturity
+        }
+        
+        // Simple interest formula: P = M / (1 + (r * t))
+        // where M = maturity value, r = annual rate as decimal, t = time in years
+        BigDecimal rateDecimal = interestRate.divide(new BigDecimal("100"), 6, RoundingMode.HALF_UP);
+        BigDecimal timeInYears = new BigDecimal(termInMonths).divide(new BigDecimal("12"), 6, RoundingMode.HALF_UP);
+        BigDecimal divisor = BigDecimal.ONE.add(rateDecimal.multiply(timeInYears));
+        
+        return maturityValue.divide(divisor, 4, RoundingMode.HALF_UP);
     }
 
     public FDAccountView findAccountByNumber(String accountNumber) {
@@ -165,20 +298,33 @@ private final FdTransactionRepository transactionRepository;
         FdAccount account = fdAccountRepository.findByAccountNumber(accountNumber)
                 .orElseThrow(() -> new ResourceNotFoundException("Account not found with number: " + accountNumber));
 
-        // 2. Create the new AccountHolder entity from the request
+        // 2. Validate role against product configuration
+        String roleTypeStr = request.roleType().name(); // Convert enum to string
+        boolean roleAllowed = productService.isRoleAllowed(account.getProductCode(), roleTypeStr);
+        
+        if (!roleAllowed) {
+            log.error("Role {} is not allowed for product: {}", roleTypeStr, account.getProductCode());
+            throw new IllegalArgumentException(
+                "Role " + roleTypeStr + " is not configured for product: " + account.getProductCode()
+            );
+        }
+        
+        log.info("Role {} validated successfully for product: {}", roleTypeStr, account.getProductCode());
+
+        // 3. Create the new AccountHolder entity from the request
         Accountholder newHolder = new Accountholder();
         newHolder.setCustomerId(request.customerId());
         newHolder.setRoleType(request.roleType());
         newHolder.setOwnershipPercentage(request.ownershipPercentage());
         newHolder.setFdAccount(account); // Set the back-reference to the parent account
 
-        // 3. Add the new holder to the account's list of holders
+        // 4. Add the new holder to the account's list of holders
         account.getAccountHolders().add(newHolder);
 
-        // 4. Save the parent account. Due to CascadeType.ALL, this will also save the new holder.
+        // 5. Save the parent account. Due to CascadeType.ALL, this will also save the new holder.
         FdAccount updatedAccount = fdAccountRepository.save(account);
 
-        // 5. Map the updated entity to a DTO and return it
+        // 6. Map the updated entity to a DTO and return it
         return mapToView(updatedAccount);
     }
     
@@ -241,9 +387,25 @@ private final FdTransactionRepository transactionRepository;
     public FDAccountView performEarlyWithdrawal(String accountNumber, EarlyWithdrawlRequest request) {
         log.info("Performing early withdrawal for account: {} with reason: {}", accountNumber, request.reason());
 
-        PrematureWithdrawalInquiryResponse inquiry = getPrematureWithdrawalInquiry(accountNumber);
         FdAccount account = fdAccountRepository.findByAccountNumber(accountNumber)
                 .orElseThrow(() -> new ResourceNotFoundException("Account not found with number: " + accountNumber));
+        
+        // Validate WITHDRAWAL transaction is allowed for this product
+        boolean withdrawalAllowed = productService.isTransactionAllowed(
+            account.getProductCode(), 
+            TransactionType.PREMATURE_WITHDRAWAL.name()
+        );
+        
+        if (!withdrawalAllowed) {
+            log.error("WITHDRAWAL transaction not allowed for product: {}", account.getProductCode());
+            throw new IllegalArgumentException(
+                "Premature withdrawal is not allowed for product: " + account.getProductCode()
+            );
+        }
+        
+        log.info("Withdrawal transaction validated for product: {}", account.getProductCode());
+
+        PrematureWithdrawalInquiryResponse inquiry = getPrematureWithdrawalInquiry(accountNumber);
 
         FdTransaction penaltyTransaction = new FdTransaction();
         penaltyTransaction.setFdAccount(account);
@@ -298,14 +460,37 @@ private final FdTransactionRepository transactionRepository;
         
         LocalDate today = LocalDate.now();
         LocalDate effectiveDate = account.getEffectiveDate();
+        LocalDate maturityDate = account.getMaturityDate();
+        
+        // Calculate term completion percentage
+        long totalTermDays = ChronoUnit.DAYS.between(effectiveDate, maturityDate);
         long daysActive = ChronoUnit.DAYS.between(effectiveDate, today);
+        double completionPercentage = (daysActive * 100.0) / totalTermDays;
 
         if (daysActive <= 0) {
             return new PrematureWithdrawalInquiryResponse(
                 accountNumber, account.getPrincipalAmount(), BigDecimal.ZERO, BigDecimal.ZERO, account.getPrincipalAmount(), today);
         }
         
-        BigDecimal penaltyInterestRate = account.getInterestRate().subtract(new BigDecimal("1.00"));
+        // Get penalty charge from product configuration based on completion percentage
+        ProductDetailsResponse.ProductCharge penaltyCharge = productService.getPenaltyCharge(
+            account.getProductCode(), 
+            completionPercentage
+        );
+        
+        BigDecimal penaltyRate;
+        if (penaltyCharge != null) {
+            // Use product-configured penalty rate
+            penaltyRate = new BigDecimal(penaltyCharge.getAmount().toString());
+            log.info("Using product penalty rate: {}% for {}% completion (charge: {})", 
+                     penaltyRate, completionPercentage, penaltyCharge.getChargeCode());
+        } else {
+            // Fallback to default penalty calculation (1% reduction)
+            penaltyRate = new BigDecimal("1.00");
+            log.warn("No product penalty found, using default 1% penalty");
+        }
+        
+        BigDecimal penaltyInterestRate = account.getInterestRate().subtract(penaltyRate);
         if (penaltyInterestRate.compareTo(BigDecimal.ZERO) < 0) {
             penaltyInterestRate = BigDecimal.ZERO;
         }
@@ -316,8 +501,21 @@ private final FdTransactionRepository transactionRepository;
         BigDecimal originalInterestAccrued = account.getPrincipalAmount().multiply(originalDailyRate).multiply(new BigDecimal(daysActive)).setScale(2, RoundingMode.HALF_UP);
         BigDecimal penalizedInterestAccrued = account.getPrincipalAmount().multiply(penaltyDailyRate).multiply(new BigDecimal(daysActive)).setScale(2, RoundingMode.HALF_UP);
         
-        BigDecimal penaltyAmount = originalInterestAccrued.subtract(penalizedInterestAccrued);
-        BigDecimal finalPayoutAmount = account.getPrincipalAmount().add(penalizedInterestAccrued);
+        // Calculate penalty amount based on charge type (PERCENTAGE or FLAT)
+        BigDecimal penaltyAmount;
+        if (penaltyCharge != null && "PERCENTAGE".equals(penaltyCharge.getCalculationType())) {
+            // Percentage-based penalty: calculate from principal
+            penaltyAmount = account.getPrincipalAmount()
+                .multiply(penaltyRate)
+                .divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
+            log.info("Calculated percentage-based penalty: {} ({}% of principal)", penaltyAmount, penaltyRate);
+        } else {
+            // Original calculation: difference in interest
+            penaltyAmount = originalInterestAccrued.subtract(penalizedInterestAccrued);
+            log.info("Calculated interest-based penalty: {}", penaltyAmount);
+        }
+        
+        BigDecimal finalPayoutAmount = account.getPrincipalAmount().add(penalizedInterestAccrued).subtract(penaltyAmount);
 
         return new PrematureWithdrawalInquiryResponse(
             accountNumber, account.getPrincipalAmount(), penalizedInterestAccrued, penaltyAmount, finalPayoutAmount, today);

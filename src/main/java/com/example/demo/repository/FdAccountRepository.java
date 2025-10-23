@@ -45,7 +45,7 @@ public interface FdAccountRepository extends JpaRepository<FdAccount, Long> {
      * WHY: Used for the Reporting feature ("accounts maturing in the next 7 days").
      */
     List<FdAccount> findByMaturityDateBetween(LocalDate startDate, LocalDate endDate);
-    
+
     /**
      * Finds accounts that were closed within a given date range.
      * WHY: Used for the Reporting feature ("accounts closed this month").
@@ -60,12 +60,13 @@ public interface FdAccountRepository extends JpaRepository<FdAccount, Long> {
      */
     @Query("SELECT a FROM FdAccount a JOIN a.accountHolders h WHERE h.customerId = :customerId")
     List<FdAccount> findAccountsByCustomerId(@Param("customerId") String customerId);
-    
+
     /**
      * Finds accounts that were created within a given date range.
      * WHY: For the "Accounts Created" report.
      */
-    List<FdAccount> findByCreatedAtBetween(LocalDateTime startDate, LocalDateTime endDate); 
+    List<FdAccount> findByCreatedAtBetween(LocalDateTime startDate, LocalDateTime endDate);
+}
     
     
     

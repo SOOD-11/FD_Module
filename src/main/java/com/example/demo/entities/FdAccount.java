@@ -77,6 +77,31 @@ public class FdAccount {
     @Column(name = "payout_account_number")
     private String payoutAccountNumber; // Linked account for payout on maturity
 
+    // Additional fields from FD Calculation Service
+    @Column(name = "calc_id")
+    private Long calcId; // Reference to the calculation ID
+    
+    @Column(name = "result_id")
+    private Long resultId; // Result ID from calculation service
+    
+    @Column(name = "apy", precision = 5, scale = 2)
+    private BigDecimal apy; // Annual Percentage Yield
+    
+    @Column(name = "effective_rate", precision = 5, scale = 2)
+    private BigDecimal effectiveRate; // Effective interest rate
+    
+    @Column(name = "payout_freq")
+    private String payoutFreq; // Payout frequency (e.g., QUARTERLY)
+    
+    @Column(name = "payout_amount", precision = 19, scale = 4)
+    private BigDecimal payoutAmount; // Per payout amount
+    
+    @Column(name = "category1_id")
+    private String category1Id; // Customer category 1 (e.g., SENIOR)
+    
+    @Column(name = "category2_id")
+    private String category2Id; // Customer category 2 (e.g., GOLD)
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
     

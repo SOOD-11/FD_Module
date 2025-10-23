@@ -10,8 +10,14 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 @RestController
 @RequestMapping("/api/v1/jobs")
+@Tag(name = "Batch Jobs", description = "APIs for manually triggering batch processing jobs")
 public class JobLaunchController {
 
     private final JobLauncher jobLaunch;
@@ -31,9 +37,11 @@ public class JobLaunchController {
         this.maturityProcessingJob = maturityProcessingJob;
     }
 
-    /**
-     * API endpoint to manually trigger the interest calculation batch job.
-     */
+    @Operation(summary = "Run interest calculation job", description = "Manually trigger the batch job to calculate interest for all active FD accounts")
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Interest calculation job started successfully"),
+        @ApiResponse(responseCode = "500", description = "Failed to start the job")
+    })
     @PostMapping("/run/interest-calculation")
     public ResponseEntity<String> runInterestCalculationJob() {
         try {
@@ -52,9 +60,11 @@ public class JobLaunchController {
         }
     }
 
-    /**
-     * API endpoint to manually trigger the maturity processing batch job.
-     */
+    @Operation(summary = "Run maturity processing job", description = "Manually trigger the batch job to process maturing FD accounts and execute maturity instructions")
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Maturity processing job started successfully"),
+        @ApiResponse(responseCode = "500", description = "Failed to start the job")
+    })
     @PostMapping("/run/maturity-processing")
     public ResponseEntity<String> runMaturityProcessingJob() {
         try {

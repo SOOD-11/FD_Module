@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import com.example.demo.events.AccountClosedEvent;
 import com.example.demo.events.AccountCreatedEvent;
 import com.example.demo.events.AccountMaturedEvent;
+import com.example.demo.events.CommunicationEvent;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,7 @@ public class KafkaProducerService {
 	   private static final String TOPIC = "fd.account.created";
 	   private static final String MATURED_TOPIC = "fd.account.matured";
 	   private static final String CLOSED_TOPIC = "fd.account.closed"; // Topic for closed accounts
+	   private static final String COMMUNICATION_TOPIC = "fd.communication"; // Topic for communications
 	   private final KafkaTemplate<String, Object> kafkaTemplate;
 	    
 
@@ -63,4 +65,18 @@ public class KafkaProducerService {
                     log.error("Failed to send account closed message to Kafka", e);
                 }
             }
+	        
+	        /**
+	         * Send communication event to Kafka
+	         * Used for various customer communications based on product configuration
+	         */
+	        public void sendCommunicationEvent(CommunicationEvent event) {
+	            log.info("Publishing communication event to topic {}: type={}, channel={}", 
+	                     COMMUNICATION_TOPIC, event.getCommunicationType(), event.getChannel());
+	            try {
+	                this.kafkaTemplate.send(COMMUNICATION_TOPIC, event.getAccountNumber(), event);
+	            } catch (Exception e) {
+	                log.error("Failed to send communication event to Kafka", e);
+	            }
+	        }
 }
