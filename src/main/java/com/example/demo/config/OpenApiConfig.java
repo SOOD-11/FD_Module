@@ -19,7 +19,7 @@ public class OpenApiConfig {
     public OpenAPI fdModuleOpenAPI() {
         // Development Server
         Server devServer = new Server();
-        devServer.setUrl("http://localhost:8080");
+        devServer.setUrl("http://localhost:9090");
         devServer.setDescription("Local Development Server");
 
         // UAT Server

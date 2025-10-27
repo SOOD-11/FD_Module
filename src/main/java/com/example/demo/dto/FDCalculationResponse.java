@@ -45,4 +45,13 @@ public class FDCalculationResponse {
     
     @JsonProperty("product_code")
     private String productCode;
+    
+    @JsonProperty("principal_amount")
+    private BigDecimal principalAmount;
+    
+    @JsonProperty("tenure_value")
+    private Integer tenureValue;
+    
+    @JsonProperty("tenure_unit")
+    private String tenureUnit; // YEARS, MONTHS, DAYS
 }

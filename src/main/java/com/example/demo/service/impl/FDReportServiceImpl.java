@@ -62,6 +62,15 @@ public List<FDAccountView> getAccountsMaturingWithin(int days) {
                 account.getMaturityAmount(),
                 account.getEffectiveDate(),
                 account.getMaturityDate(),
+                account.getInterestRate(),
+                account.getApy(),
+                account.getCategory1Id(),
+                account.getCategory2Id(),
+                account.getInterestType(),
+                account.getCompoundingFrequency(),
+                account.getTenureValue(),
+                account.getTenureUnit(),
+                account.getCurrency(),
                 holderViews);
     }
     

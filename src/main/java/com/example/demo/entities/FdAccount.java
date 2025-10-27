@@ -101,6 +101,23 @@ public class FdAccount {
     
     @Column(name = "category2_id")
     private String category2Id; // Customer category 2 (e.g., GOLD)
+    
+    // New fields from FD Calculation Service
+    @Column(name = "tenure_value")
+    private Integer tenureValue; // Tenure value (e.g., 5)
+    
+    @Column(name = "tenure_unit", length = 20)
+    private String tenureUnit; // Tenure unit (YEARS, MONTHS, DAYS)
+    
+    // New fields from Product Service
+    @Column(name = "currency", length = 3)
+    private String currency; // Currency code (e.g., INR, USD)
+    
+    @Column(name = "interest_type", length = 20)
+    private String interestType; // Interest type (SIMPLE, COMPOUND)
+    
+    @Column(name = "compounding_frequency", length = 20)
+    private String compoundingFrequency; // Compounding frequency (MONTHLY, QUARTERLY, YEARLY)
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

@@ -12,6 +12,7 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.cors.CorsConfigurationSource;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,10 +24,14 @@ import lombok.extern.slf4j.Slf4j;
 public class SecurityConfig {
 
     private final JwtPublicKeyProvider jwtPublicKeyProvider;
+    private final CorsConfigurationSource corsConfigurationSource;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+            // Enable CORS
+            .cors(cors -> cors.configurationSource(corsConfigurationSource))
+            
             // Disable CSRF protection - not needed for stateless REST APIs
             .csrf(csrf -> csrf.disable())
             

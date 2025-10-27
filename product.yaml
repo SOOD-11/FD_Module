@@ -40,7 +40,23 @@ info:
     4. Check example requests and responses for each operation
 
     ## Authentication
-    This API requires authentication. Contact your system administrator for access credentials.
+    This API uses JWT Bearer token authentication from NEXA Bank Auth Service.
+
+    **How to authenticate:**
+    1. Click the **Authorize** button (🔓) at the top of this page
+    2. Enter your JWT token in the format: `Bearer <your_token>`
+    3. Click **Authorize** to apply the token to all requests
+
+    **To get a JWT token:**
+    ```bash
+    curl -X POST http://localhost:3020/api/auth/login \
+      -H "Content-Type: application/json" \
+      -d '{"email": "admin@nexabank.com", "password": "YourPassword"}'
+    ```
+
+    **Access Rules:**
+    - **GET requests**: Public (no authentication required)
+    - **POST/PUT/DELETE requests**: Require ADMIN role in JWT token
 
     ## Support
     For technical support, documentation, or API access requests, contact the Banking Labs support team.
@@ -64,6 +80,8 @@ servers:
     description: User Acceptance Testing Environment
   - url: https://api.bankinglabs.com
     description: Production Environment
+security:
+  - bearerAuth: []
 tags:
   - name: Product Interest Rates
     description: This API provides a structured rate card for financial products like fixed deposits. It allows for the retrieval of precise interest rates based on the product's term length. For each term, the API returns a set of rates corresponding to various payout schedules, including cumulative and non-cumulative (monthly, quarterly, yearly) options.
@@ -345,14 +363,14 @@ paths:
                     createdAt: '2025-10-16T09:54:40.583654'
                     efctv_date: null
                 Personal Loan Product:
-                  summary: personal loan with monthly compounding below Â¥500000
+                  summary: personal loan with monthly compounding below ¥500000
                   description: Personal Loan Product
                   value:
                     productId: 770e8400-e29b-41d4-a716-446655440222
                     productCode: LOAN-PERSONAL-LOW-JPY-25
-                    productName: Personal Loan below Â¥500000
+                    productName: Personal Loan below ¥500000
                     productType: LOAN
-                    productDescription: Unsecured personal loan up to Â¥500,000
+                    productDescription: Unsecured personal loan up to ¥500,000
                     currency: JPY
                     status: ACTIVE
                     interestType: COMPOUND
@@ -573,12 +591,79 @@ paths:
       tags:
         - Product Management
       summary: Delete a product (permanent removal)
-      description: "Permanently remove a product and ALL related data from the system. This is a destructive operation\nthat cannot be undone.\n\n**What gets deleted:**\n- Product core details\n- All interest rate tiers\n- All fee and charge configurations\n- All balance type mappings\n- All business rules\n- All transaction configurations\n- All role assignments\n- All communication templates\n\n**âš ï¸\x8F IMPORTANT WARNINGS:**\n- This operation is **IRREVERSIBLE**\n- All related data is **PERMANENTLY DELETED**\n- Existing customer accounts using this product are NOT affected\n- Audit trail for past transactions is maintained\n- Cannot delete if active accounts exist (future enhancement)\n\n**Recommended Alternative:**\nInstead of deletion, consider:\n1. Set status to INACTIVE using PUT /api/products/{code}\n2. Set effectiveEndDate to retire product gracefully\n3. This preserves audit trail and historical data\n\n**Use Cases:**\n\n**Scenario 1: Test Data Cleanup**\n- Remove test products from development environment\n- Clean up incorrectly created products\n- Reset demo data\n\n**Scenario 2: Duplicate Product Removal**\n- Remove accidentally created duplicates\n- Delete products created in error\n- Clean up failed migrations\n\n**Scenario 3: Compliance Requirement**\n- GDPR/data deletion requests (rare)\n- Legal requirement to remove product\n- Must be documented and approved\n\n**â\x9DŒ WRONG USE CASES:**\n- Retiring a product â†’ Use status=INACTIVE instead\n- Temporary product suspension â†’ Use status=INACTIVE\n- Product no longer offered â†’ Set effectiveEndDate\n\n**Related Endpoints:**\n- PUT /api/products/{code} - Update status to INACTIVE (preferred)\n- GET /api/products/{code} - Verify product before deletion\n- POST /api/products - Create replacement product\n\n**Production Best Practices:**\n1. Always verify product code before deletion\n2. Export product configuration as backup\n3. Check for active accounts (manual verification)\n4. Document reason for deletion\n5. Get proper authorization\n6. Consider soft delete (INACTIVE status) instead\n"
+      description: |
+        Permanently remove a product and ALL related data from the system. This is a destructive operation
+        that cannot be undone.
+
+        **What gets deleted:**
+        - Product core details
+        - All interest rate tiers
+        - All fee and charge configurations
+        - All balance type mappings
+        - All business rules
+        - All transaction configurations
+        - All role assignments
+        - All communication templates
+
+        **⚠️ IMPORTANT WARNINGS:**
+        - This operation is **IRREVERSIBLE**
+        - All related data is **PERMANENTLY DELETED**
+        - Existing customer accounts using this product are NOT affected
+        - Audit trail for past transactions is maintained
+        - Cannot delete if active accounts exist (future enhancement)
+
+        **Recommended Alternative:**
+        Instead of deletion, consider:
+        1. Set status to INACTIVE using PUT /api/products/{code}
+        2. Set effectiveEndDate to retire product gracefully
+        3. This preserves audit trail and historical data
+
+        **Use Cases:**
+
+        **Scenario 1: Test Data Cleanup**
+        - Remove test products from development environment
+        - Clean up incorrectly created products
+        - Reset demo data
+
+        **Scenario 2: Duplicate Product Removal**
+        - Remove accidentally created duplicates
+        - Delete products created in error
+        - Clean up failed migrations
+
+        **Scenario 3: Compliance Requirement**
+        - GDPR/data deletion requests (rare)
+        - Legal requirement to remove product
+        - Must be documented and approved
+
+        **❌ WRONG USE CASES:**
+        - Retiring a product → Use status=INACTIVE instead
+        - Temporary product suspension → Use status=INACTIVE
+        - Product no longer offered → Set effectiveEndDate
+
+        **Related Endpoints:**
+        - PUT /api/products/{code} - Update status to INACTIVE (preferred)
+        - GET /api/products/{code} - Verify product before deletion
+        - POST /api/products - Create replacement product
+
+        **Production Best Practices:**
+        1. Always verify product code before deletion
+        2. Export product configuration as backup
+        3. Check for active accounts (manual verification)
+        4. Document reason for deletion
+        5. Get proper authorization
+        6. Consider soft delete (INACTIVE status) instead
       operationId: deleteProduct
       parameters:
         - name: productCode
           in: path
-          description: "Product code to permanently delete.\n\nâš ï¸\x8F WARNING: This cannot be undone!\n\nExample: SAV-HIGH-YIELD-2025\n\nVerify product code carefully before execution.\n"
+          description: |
+            Product code to permanently delete.
+
+            ⚠️ WARNING: This cannot be undone!
+
+            Example: SAV-HIGH-YIELD-2025
+
+            Verify product code carefully before execution.
           required: true
           schema:
             type: string
@@ -745,7 +830,7 @@ paths:
 
         **Scenario 1: Increase Withdrawal Limits**
         Customer tier upgrade requires higher limits:
-        - Increase maximumAmount from â‚¹2,00,000 to â‚¹5,00,000
+        - Increase maximumAmount from ₹2,00,000 to ₹5,00,000
         - Update minimumAmount if needed
         - Keep transaction type as WITHDRAWAL
         - Immediate effect on all customers
@@ -893,7 +978,57 @@ paths:
       tags:
         - Product Transaction Types
       summary: Permanently remove transaction type configuration
-      description: "Delete a transaction type configuration from the product.\n\n**âš ï¸\x8F CRITICAL WARNING:**\nThis action is PERMANENT and IRREVERSIBLE!\n- Transaction type will be completely removed\n- Configuration cannot be recovered\n- No undo functionality\n\n**Before Deleting:**\n1. **Verify Impact:** Check if transaction type is actively used\n2. **Consider Disable:** Set isActive=false instead of deleting (via PUT)\n3. **Document Reason:** Keep audit trail of why transaction was removed\n4. **Test Impact:** Verify in staging environment first\n\n**When to DELETE:**\n- Transaction type permanently discontinued\n- Removing test/development configurations\n- Product being decommissioned\n- Consolidating duplicate transaction types\n\n**When to DISABLE (Recommended Alternative):**\n- Temporary suspension needed\n- Maintenance or security concern\n- Testing new configurations\n- Want to preserve configuration\n\n**Use PUT /api/products/{code}/transactions/{code} to disable:**\nSet isActive field to false in the request body\n\n**Recommended Workflow:**\n1. Get transaction details (verify correct one)\n2. Document deletion reason\n3. Disable transaction first (test impact via PUT)\n4. Monitor for issues\n5. Delete if confirmed no longer needed\n\n**What Happens:**\n- Configuration removed from database\n- Transaction type no longer available\n- Transaction code becomes invalid\n\n**Impact Examples:**\n- Delete WITHDRAWAL â†’ No withdrawals possible\n- Delete DEPOSIT â†’ Can't add funds (usually BAD idea!)\n- Delete INTEREST_ACCRUED â†’ No automatic interest\n\n**Related Endpoints:**\n- PUT /api/products/{code}/transactions/{code} - Disable instead of delete\n- GET /api/products/{code}/transactions/{code} - Verify before deletion\n- GET /api/products/{code}/transactions - View remaining transaction types\n"
+      description: |
+        Delete a transaction type configuration from the product.
+
+        **⚠️ CRITICAL WARNING:**
+        This action is PERMANENT and IRREVERSIBLE!
+        - Transaction type will be completely removed
+        - Configuration cannot be recovered
+        - No undo functionality
+
+        **Before Deleting:**
+        1. **Verify Impact:** Check if transaction type is actively used
+        2. **Consider Disable:** Set isActive=false instead of deleting (via PUT)
+        3. **Document Reason:** Keep audit trail of why transaction was removed
+        4. **Test Impact:** Verify in staging environment first
+
+        **When to DELETE:**
+        - Transaction type permanently discontinued
+        - Removing test/development configurations
+        - Product being decommissioned
+        - Consolidating duplicate transaction types
+
+        **When to DISABLE (Recommended Alternative):**
+        - Temporary suspension needed
+        - Maintenance or security concern
+        - Testing new configurations
+        - Want to preserve configuration
+
+        **Use PUT /api/products/{code}/transactions/{code} to disable:**
+        Set isActive field to false in the request body
+
+        **Recommended Workflow:**
+        1. Get transaction details (verify correct one)
+        2. Document deletion reason
+        3. Disable transaction first (test impact via PUT)
+        4. Monitor for issues
+        5. Delete if confirmed no longer needed
+
+        **What Happens:**
+        - Configuration removed from database
+        - Transaction type no longer available
+        - Transaction code becomes invalid
+
+        **Impact Examples:**
+        - Delete WITHDRAWAL → No withdrawals possible
+        - Delete DEPOSIT → Can't add funds (usually BAD idea!)
+        - Delete INTEREST_ACCRUED → No automatic interest
+
+        **Related Endpoints:**
+        - PUT /api/products/{code}/transactions/{code} - Disable instead of delete
+        - GET /api/products/{code}/transactions/{code} - Verify before deletion
+        - GET /api/products/{code}/transactions - View remaining transaction types
       operationId: deleteTransaction
       parameters:
         - name: productCode
@@ -905,7 +1040,11 @@ paths:
           example: SAV-HIGH-YIELD-2025
         - name: transactionCode
           in: path
-          description: "Transaction code to permanently delete.\n\nâš ï¸\x8F WARNING: This action cannot be undone!\nConsider disabling the transaction instead using PUT endpoint with isActive=false.\n"
+          description: |
+            Transaction code to permanently delete.
+
+            ⚠️ WARNING: This action cannot be undone!
+            Consider disabling the transaction instead using PUT endpoint with isActive=false.
           required: true
           schema:
             type: string
@@ -1013,7 +1152,7 @@ paths:
                     ruleType: VALIDATION
                     ruleExpression: balance >= 100
                     rulePriority: 2
-                    errorMessage: Account balance must be at least â‚¹10,000
+                    errorMessage: Account balance must be at least ₹10,000
                     isActive: true
                     createdAt: '2025-01-01T00:00:00'
                     updatedAt: '2025-03-15T14:20:00'
@@ -1026,7 +1165,7 @@ paths:
                     ruleType: TRANSACTION_LIMIT
                     ruleExpression: sum(daily_withdrawals) <= 1000
                     rulePriority: 3
-                    errorMessage: Daily withdrawal limit of â‚¹1,00,000 has been exceeded. Please try again tomorrow.
+                    errorMessage: Daily withdrawal limit of ₹1,00,000 has been exceeded. Please try again tomorrow.
                     isActive: true
                     createdAt: '2025-01-01T00:00:00'
                     updatedAt: '2025-01-01T00:00:00'
@@ -1133,14 +1272,14 @@ paths:
               $ref: '#/components/schemas/ProductRuleRequestDTO'
             examples:
               Increase Balance Requirement:
-                summary: Update minimum balance from â‚¹10,000 to â‚¹50,000
+                summary: Update minimum balance from ₹10,000 to ₹50,000
                 description: Increase Balance Requirement
                 value:
                   ruleName: Minimum Balance Requirement
                   ruleType: VALIDATION
                   ruleExpression: balance >= 500
                   rulePriority: 2
-                  errorMessage: Account balance must be at least â‚¹50,000 to avoid monthly fees
+                  errorMessage: Account balance must be at least ₹50,000 to avoid monthly fees
                   isActive: true
               Disable Rule:
                 summary: Temporarily suspend rule without deletion
@@ -1150,7 +1289,7 @@ paths:
                   ruleType: TRANSACTION_LIMIT
                   ruleExpression: sum(daily_withdrawals) <= 1000
                   rulePriority: 3
-                  errorMessage: Daily withdrawal limit of â‚¹1,00,000 has been exceeded.
+                  errorMessage: Daily withdrawal limit of ₹1,00,000 has been exceeded.
                   isActive: false
         required: true
       responses:
@@ -1170,7 +1309,7 @@ paths:
                     ruleType: VALIDATION
                     ruleExpression: balance >= 500
                     rulePriority: 2
-                    errorMessage: Account balance must be at least â‚¹50,000 to avoid monthly fees
+                    errorMessage: Account balance must be at least ₹50,000 to avoid monthly fees
                     isActive: true
                     createdAt: '2025-01-01T00:00:00'
                     updatedAt: '2025-10-15T14:30:00'
@@ -1183,7 +1322,7 @@ paths:
                     ruleType: TRANSACTION_LIMIT
                     ruleExpression: sum(daily_withdrawals) <= 1000
                     rulePriority: 3
-                    errorMessage: Daily withdrawal limit of â‚¹1,00,000 has been exceeded.
+                    errorMessage: Daily withdrawal limit of ₹1,00,000 has been exceeded.
                     isActive: false
                     createdAt: '2025-01-01T00:00:00'
                     updatedAt: '2025-10-15T14:35:00'
@@ -1219,7 +1358,62 @@ paths:
       tags:
         - Product Business Rules
       summary: Permanently remove business rule
-      description: "Delete a business rule from the product configuration.\n\n**âš ï¸\x8F CRITICAL WARNING:**\nThis action is PERMANENT and IRREVERSIBLE!\n- Rule configuration will be lost\n- Cannot be recovered\n- Affects all future validations\n- No undo functionality\n\n**Before Deleting:**\n1. **Verify Impact:** Check if rule is actively used\n2. **Document Reason:** Keep audit trail why rule was removed\n3. **Consider Disable:** Set isActive=false instead of deleting\n4. **Test Impact:** Verify no critical dependencies\n5. **Notify Stakeholders:** Inform affected parties\n\n**When to DELETE:**\n- Rule is completely obsolete\n- Business logic permanently changed\n- Rule was created by mistake\n- Product being decommissioned\n- Duplicate rule cleanup\n\n**When to DISABLE (Recommended Alternative):**\n- Temporary suspension needed\n- Testing new logic\n- Seasonal rules (may reactivate)\n- Uncertain if rule still needed\n- Want to preserve history\n\n**Use PATCH /api/products/{code}/rules/{id} to disable:**\n```\n{\n  \"isActive\": false\n}\n```\n\n**Recommended Workflow:**\n1. Get rule details (verify it's correct rule)\n2. Document deletion reason\n3. Disable rule first (test impact)\n4. Monitor for 30 days\n5. Delete if no issues arise\n\n**What Happens:**\n- Rule removed from database\n- No longer enforced on transactions\n- Future validations won't check this rule\n- Existing accounts/transactions unaffected\n- Rule ID becomes invalid\n\n**Related Endpoints:**\n- PUT /api/products/{code}/rules/{id} - Disable instead of delete\n- GET /api/products/{code}/rules/{id} - Verify before deletion\n- GET /api/products/{code}/rules - View remaining rules\n"
+      description: |
+        Delete a business rule from the product configuration.
+
+        **⚠️ CRITICAL WARNING:**
+        This action is PERMANENT and IRREVERSIBLE!
+        - Rule configuration will be lost
+        - Cannot be recovered
+        - Affects all future validations
+        - No undo functionality
+
+        **Before Deleting:**
+        1. **Verify Impact:** Check if rule is actively used
+        2. **Document Reason:** Keep audit trail why rule was removed
+        3. **Consider Disable:** Set isActive=false instead of deleting
+        4. **Test Impact:** Verify no critical dependencies
+        5. **Notify Stakeholders:** Inform affected parties
+
+        **When to DELETE:**
+        - Rule is completely obsolete
+        - Business logic permanently changed
+        - Rule was created by mistake
+        - Product being decommissioned
+        - Duplicate rule cleanup
+
+        **When to DISABLE (Recommended Alternative):**
+        - Temporary suspension needed
+        - Testing new logic
+        - Seasonal rules (may reactivate)
+        - Uncertain if rule still needed
+        - Want to preserve history
+
+        **Use PATCH /api/products/{code}/rules/{id} to disable:**
+        ```
+        {
+          "isActive": false
+        }
+        ```
+
+        **Recommended Workflow:**
+        1. Get rule details (verify it's correct rule)
+        2. Document deletion reason
+        3. Disable rule first (test impact)
+        4. Monitor for 30 days
+        5. Delete if no issues arise
+
+        **What Happens:**
+        - Rule removed from database
+        - No longer enforced on transactions
+        - Future validations won't check this rule
+        - Existing accounts/transactions unaffected
+        - Rule ID becomes invalid
+
+        **Related Endpoints:**
+        - PUT /api/products/{code}/rules/{id} - Disable instead of delete
+        - GET /api/products/{code}/rules/{id} - Verify before deletion
+        - GET /api/products/{code}/rules - View remaining rules
       operationId: deleteRule
       parameters:
         - name: productCode
@@ -1231,7 +1425,11 @@ paths:
           example: SAV-HIGH-YIELD-2025
         - name: ruleId
           in: path
-          description: "Business rule ID (UUID) to permanently delete.\n\nâš ï¸\x8F WARNING: This action cannot be undone!\nConsider disabling the rule instead using PUT endpoint with isActive=false.\n"
+          description: |
+            Business rule ID (UUID) to permanently delete.
+
+            ⚠️ WARNING: This action cannot be undone!
+            Consider disabling the rule instead using PUT endpoint with isActive=false.
           required: true
           schema:
             type: string
@@ -1571,7 +1769,79 @@ paths:
       tags:
         - Product Roles & Permissions
       summary: Permanently remove role configuration from product
-      description: "Delete a role configuration, removing access capability for this role type.\n\n**âš ï¸\x8F CRITICAL WARNING:**\nThis action is PERMANENT and IRREVERSIBLE!\n- Role configuration will be lost forever\n- Users assigned this role will lose access\n- Cannot be recovered\n- May disrupt active user sessions\n- No undo functionality\n\n**Before Deleting:**\n1. **Check User Assignments:** Verify no users currently have this role\n2. **Impact Assessment:** Understand who will be affected\n3. **Communication Plan:** Notify affected users in advance\n4. **Alternative Access:** Provide alternative role assignments\n5. **Document Reason:** Keep audit trail of why role was removed\n6. **Consider Disable:** Set isActive=false instead of deleting\n\n**When to DELETE:**\n- Role type permanently discontinued\n- Simplifying role structure\n- No users assigned to this role\n- Product being decommissioned\n- Duplicate role cleanup\n- Test/development role removal\n\n**When to DISABLE (Recommended Alternative):**\n- Temporary suspension needed\n- Want to preserve configuration\n- Users might need role later\n- Testing new access structure\n- Uncertain about permanent removal\n- Regulatory compliance requires history\n\n**Use PUT /api/products/{code}/roles/{id} to disable:**\n```\n{\n  \"isActive\": false\n}\n```\n\n**Recommended Workflow:**\n1. Get role details (verify correct role)\n2. Check user assignments\n3. Notify affected users (30-day notice)\n4. Migrate users to alternative roles\n5. Disable role first (test impact)\n6. Monitor for 30 days\n7. Delete if no issues arise\n\n**What Happens:**\n- Role removed from database\n- Role type no longer available\n- Users with this role lose access immediately\n- New assignments impossible\n- Role ID becomes invalid\n- Historical data remains but role reference broken\n\n**Impact Examples:**\n- Delete PRIMARY_OWNER â†’ Accounts become orphaned (DANGEROUS!)\n- Delete VIEW_ONLY â†’ Read-only users lose access\n- Delete AUTHORIZED_USER â†’ Transaction permissions revoked\n\n**Dangerous Deletions:**\n- PRIMARY_OWNER (critical for account ownership)\n- CO_OWNER (joint account management)\n- Any role with active user assignments\n\n**Related Endpoints:**\n- PUT /api/products/{code}/roles/{id} - Disable instead of delete\n- GET /api/products/{code}/roles/{id} - Verify before deletion\n- GET /api/products/{code}/roles - View remaining roles\n"
+      description: |
+        Delete a role configuration, removing access capability for this role type.
+
+        **⚠️ CRITICAL WARNING:**
+        This action is PERMANENT and IRREVERSIBLE!
+        - Role configuration will be lost forever
+        - Users assigned this role will lose access
+        - Cannot be recovered
+        - May disrupt active user sessions
+        - No undo functionality
+
+        **Before Deleting:**
+        1. **Check User Assignments:** Verify no users currently have this role
+        2. **Impact Assessment:** Understand who will be affected
+        3. **Communication Plan:** Notify affected users in advance
+        4. **Alternative Access:** Provide alternative role assignments
+        5. **Document Reason:** Keep audit trail of why role was removed
+        6. **Consider Disable:** Set isActive=false instead of deleting
+
+        **When to DELETE:**
+        - Role type permanently discontinued
+        - Simplifying role structure
+        - No users assigned to this role
+        - Product being decommissioned
+        - Duplicate role cleanup
+        - Test/development role removal
+
+        **When to DISABLE (Recommended Alternative):**
+        - Temporary suspension needed
+        - Want to preserve configuration
+        - Users might need role later
+        - Testing new access structure
+        - Uncertain about permanent removal
+        - Regulatory compliance requires history
+
+        **Use PUT /api/products/{code}/roles/{id} to disable:**
+        ```
+        {
+          "isActive": false
+        }
+        ```
+
+        **Recommended Workflow:**
+        1. Get role details (verify correct role)
+        2. Check user assignments
+        3. Notify affected users (30-day notice)
+        4. Migrate users to alternative roles
+        5. Disable role first (test impact)
+        6. Monitor for 30 days
+        7. Delete if no issues arise
+
+        **What Happens:**
+        - Role removed from database
+        - Role type no longer available
+        - Users with this role lose access immediately
+        - New assignments impossible
+        - Role ID becomes invalid
+        - Historical data remains but role reference broken
+
+        **Impact Examples:**
+        - Delete PRIMARY_OWNER → Accounts become orphaned (DANGEROUS!)
+        - Delete VIEW_ONLY → Read-only users lose access
+        - Delete AUTHORIZED_USER → Transaction permissions revoked
+
+        **Dangerous Deletions:**
+        - PRIMARY_OWNER (critical for account ownership)
+        - CO_OWNER (joint account management)
+        - Any role with active user assignments
+
+        **Related Endpoints:**
+        - PUT /api/products/{code}/roles/{id} - Disable instead of delete
+        - GET /api/products/{code}/roles/{id} - Verify before deletion
+        - GET /api/products/{code}/roles - View remaining roles
       operationId: deleteRole
       parameters:
         - name: productCode
@@ -1583,7 +1853,12 @@ paths:
           example: SAV-HIGH-YIELD-2025
         - name: roleId
           in: path
-          description: "Role configuration ID (UUID) to permanently delete.\n\nâš ï¸\x8F WARNING: This action cannot be undone!\nUsers with this role will immediately lose access.\nConsider disabling the role instead using PUT endpoint with isActive=false.\n"
+          description: |
+            Role configuration ID (UUID) to permanently delete.
+
+            ⚠️ WARNING: This action cannot be undone!
+            Users with this role will immediately lose access.
+            Consider disabling the role instead using PUT endpoint with isActive=false.
           required: true
           schema:
             type: string
@@ -1726,7 +2001,7 @@ paths:
 
         **Scenario 4: Tier Rename**
         - Rebrand tier names
-        - "Tier 1" â†’ "Bronze Level"
+        - "Tier 1" → "Bronze Level"
         - Improve marketing clarity
 
         **Important Notes:**
@@ -1809,7 +2084,7 @@ paths:
                   description: Range Overlap
                   value:
                     error: Conflict
-                    message: Updated balance range â‚¹8,00,000 - â‚¹25,00,000 overlaps with Tier 2 (â‚¹10,00,000 - â‚¹50,00,000)
+                    message: Updated balance range ₹8,00,000 - ₹25,00,000 overlaps with Tier 2 (₹10,00,000 - ₹50,00,000)
                     timestamp: '2025-10-15T10:30:00'
         '404':
           description: Interest rate tier or product not found
@@ -1823,7 +2098,66 @@ paths:
       tags:
         - Product Interest Rates
       summary: Delete an interest rate tier (permanent removal)
-      description: "Permanently remove an interest rate tier from a product's rate structure.\n\n**âš ï¸\x8F WARNING: This operation is IRREVERSIBLE**\n\n**What gets deleted:**\n- The interest rate tier configuration\n- Balance range definition\n- Rate percentage setting\n\n**What is NOT affected:**\n- Existing customer accounts (continue with locked-in rates)\n- Historical interest calculations\n- Audit trail of past transactions\n\n**When to Delete:**\n- Incorrectly created tier (duplicate or error)\n- Restructuring rate tiers completely\n- Removing outdated promotional tiers\n- Test data cleanup\n\n**Recommended Alternative:**\nInstead of deletion, consider:\n1. Set isActive = false using PUT endpoint\n2. Preserves configuration and history\n3. Can be reactivated if needed\n4. Maintains audit trail\n\n**Common Use Cases:**\n\n**Scenario 1: Rate Structure Simplification**\n- Originally had 5 tiers\n- Simplifying to 3 tiers\n- Delete unnecessary intermediate tiers\n\n**Scenario 2: Promotional Tier Removal**\n- Limited-time promotional rate ended\n- Rate no longer offered\n- Remove promotional tier configuration\n\n**Scenario 3: Duplicate Cleanup**\n- Accidentally created duplicate tier\n- Remove the duplicate\n- Keep correct configuration\n\n**â\x9DŒ WRONG USE CASES:**\n- Temporarily disabling a tier â†’ Use isActive=false\n- Rate change â†’ Use PUT to update rate\n- End of promotion â†’ Use isActive=false\n\n**Important Validation:**\n- Verify this won't leave gaps in coverage\n- Ensure remaining tiers cover full balance range\n- Check if any accounts are currently using this tier\n- Document reason for deletion\n\n**Related Endpoints:**\n- PUT /api/products/{code}/interest-rates/{id} - Update tier (preferred)\n- GET /api/products/{code}/interest-rates - View remaining tiers\n- POST /api/products/{code}/interest-rates - Add replacement tier\n"
+      description: |
+        Permanently remove an interest rate tier from a product's rate structure.
+
+        **⚠️ WARNING: This operation is IRREVERSIBLE**
+
+        **What gets deleted:**
+        - The interest rate tier configuration
+        - Balance range definition
+        - Rate percentage setting
+
+        **What is NOT affected:**
+        - Existing customer accounts (continue with locked-in rates)
+        - Historical interest calculations
+        - Audit trail of past transactions
+
+        **When to Delete:**
+        - Incorrectly created tier (duplicate or error)
+        - Restructuring rate tiers completely
+        - Removing outdated promotional tiers
+        - Test data cleanup
+
+        **Recommended Alternative:**
+        Instead of deletion, consider:
+        1. Set isActive = false using PUT endpoint
+        2. Preserves configuration and history
+        3. Can be reactivated if needed
+        4. Maintains audit trail
+
+        **Common Use Cases:**
+
+        **Scenario 1: Rate Structure Simplification**
+        - Originally had 5 tiers
+        - Simplifying to 3 tiers
+        - Delete unnecessary intermediate tiers
+
+        **Scenario 2: Promotional Tier Removal**
+        - Limited-time promotional rate ended
+        - Rate no longer offered
+        - Remove promotional tier configuration
+
+        **Scenario 3: Duplicate Cleanup**
+        - Accidentally created duplicate tier
+        - Remove the duplicate
+        - Keep correct configuration
+
+        **❌ WRONG USE CASES:**
+        - Temporarily disabling a tier → Use isActive=false
+        - Rate change → Use PUT to update rate
+        - End of promotion → Use isActive=false
+
+        **Important Validation:**
+        - Verify this won't leave gaps in coverage
+        - Ensure remaining tiers cover full balance range
+        - Check if any accounts are currently using this tier
+        - Document reason for deletion
+
+        **Related Endpoints:**
+        - PUT /api/products/{code}/interest-rates/{id} - Update tier (preferred)
+        - GET /api/products/{code}/interest-rates - View remaining tiers
+        - POST /api/products/{code}/interest-rates - Add replacement tier
       operationId: deleteInterestRate
       parameters:
         - name: productCode
@@ -1835,7 +2169,12 @@ paths:
           example: SAV-HIGH-YIELD-2025
         - name: interestId
           in: path
-          description: "Interest rate tier ID to permanently delete.\n\nâš ï¸\x8F WARNING: This cannot be undone!\n\nConsider using PUT with isActive=false instead.\n"
+          description: |
+            Interest rate tier ID to permanently delete.
+
+            ⚠️ WARNING: This cannot be undone!
+
+            Consider using PUT with isActive=false instead.
           required: true
           schema:
             type: string
@@ -2123,14 +2462,14 @@ paths:
           required: true
           schema:
             type: string
-          example: SAV-HIGH-YIELD-2025
+          example: FD001
         - name: commId
           in: path
           description: Communication template ID (UUID) to update
           required: true
           schema:
             type: string
-          example: comm-991e8400-e29b-41d4-a716-446655440001
+          example: COMM_OPENING
       requestBody:
         description: |
           Updated communication template configuration.
@@ -2250,7 +2589,89 @@ paths:
       tags:
         - Product Communication Templates
       summary: Permanently remove communication template
-      description: "Delete a communication template, stopping all automated notifications for this event.\n\n**âš ï¸\x8F CRITICAL WARNING:**\nThis action is PERMANENT and IRREVERSIBLE!\n- Template configuration will be lost forever\n- Customers will stop receiving these notifications\n- Cannot be recovered\n- No undo functionality\n- May violate regulatory requirements\n\n**Before Deleting:**\n1. **Regulatory Check:** Verify not legally required (statements, disclosures)\n2. **Impact Assessment:** Understand who will be affected\n3. **Customer Communication:** Consider notifying customers of change\n4. **Alternative Solutions:** Check if disabling is better option\n5. **Document Reason:** Keep audit trail of why template was removed\n6. **Test Impact:** Verify in staging environment first\n\n**When to DELETE:**\n- Template permanently obsolete\n- Product being decommissioned\n- Duplicate template cleanup\n- Test/development template removal\n- Campaign-specific template ended\n- Template never used\n\n**When to DISABLE (Recommended Alternative):**\n- Temporary suspension needed\n- Want to preserve configuration\n- Seasonal or campaign-based\n- Testing new approach\n- Uncertain about permanent removal\n- Compliance requires history\n- May reactivate later\n\n**Use PUT /api/products/{code}/communications/{id} to disable:**\n```\n{\n  \"isActive\": false\n}\n```\n\n**Recommended Workflow:**\n1. Get template details (verify correct template)\n2. Check if legally required\n3. Document deletion reason\n4. Notify stakeholders (30-day notice)\n5. Disable template first (test impact)\n6. Monitor customer feedback for 30 days\n7. Delete if no issues or complaints\n\n**What Happens:**\n- Template removed from database\n- No more notifications sent\n- Scheduled communications cancelled\n- Template ID becomes invalid\n- Historical messages remain\n- No future reference possible\n\n**Impact Examples:**\n- Delete STATEMENT template â†’ Customers miss monthly statements (REGULATORY ISSUE!)\n- Delete TRANSACTION_ALERT â†’ No fraud detection notifications (SECURITY RISK!)\n- Delete PAYMENT_REMINDER â†’ Customers miss due dates (CUSTOMER HARM!)\n- Delete PROMOTIONAL â†’ Marketing campaign stops (OK if campaign ended)\n\n**Dangerous Deletions (DO NOT DELETE):**\n- **REGULATORY/COMPLIANCE** templates (statements, disclosures, privacy notices)\n- **SECURITY** alerts (fraud, suspicious activity)\n- **CRITICAL** notifications (payment due, overdraft, balance low)\n- **TRANSACTIONAL** confirmations (legally required receipts)\n\n**Safe Deletions:**\n- Promotional campaigns (ended)\n- Seasonal greetings\n- Test templates\n- Duplicate templates\n- Unused templates\n\n**Related Endpoints:**\n- PUT /api/products/{code}/communications/{id} - Disable instead of delete\n- GET /api/products/{code}/communications/{id} - Verify before deletion\n- GET /api/products/{code}/communications - View remaining templates\n"
+      description: |
+        Delete a communication template, stopping all automated notifications for this event.
+
+        **⚠️ CRITICAL WARNING:**
+        This action is PERMANENT and IRREVERSIBLE!
+        - Template configuration will be lost forever
+        - Customers will stop receiving these notifications
+        - Cannot be recovered
+        - No undo functionality
+        - May violate regulatory requirements
+
+        **Before Deleting:**
+        1. **Regulatory Check:** Verify not legally required (statements, disclosures)
+        2. **Impact Assessment:** Understand who will be affected
+        3. **Customer Communication:** Consider notifying customers of change
+        4. **Alternative Solutions:** Check if disabling is better option
+        5. **Document Reason:** Keep audit trail of why template was removed
+        6. **Test Impact:** Verify in staging environment first
+
+        **When to DELETE:**
+        - Template permanently obsolete
+        - Product being decommissioned
+        - Duplicate template cleanup
+        - Test/development template removal
+        - Campaign-specific template ended
+        - Template never used
+
+        **When to DISABLE (Recommended Alternative):**
+        - Temporary suspension needed
+        - Want to preserve configuration
+        - Seasonal or campaign-based
+        - Testing new approach
+        - Uncertain about permanent removal
+        - Compliance requires history
+        - May reactivate later
+
+        **Use PUT /api/products/{code}/communications/{id} to disable:**
+        ```
+        {
+          "isActive": false
+        }
+        ```
+
+        **Recommended Workflow:**
+        1. Get template details (verify correct template)
+        2. Check if legally required
+        3. Document deletion reason
+        4. Notify stakeholders (30-day notice)
+        5. Disable template first (test impact)
+        6. Monitor customer feedback for 30 days
+        7. Delete if no issues or complaints
+
+        **What Happens:**
+        - Template removed from database
+        - No more notifications sent
+        - Scheduled communications cancelled
+        - Template ID becomes invalid
+        - Historical messages remain
+        - No future reference possible
+
+        **Impact Examples:**
+        - Delete STATEMENT template → Customers miss monthly statements (REGULATORY ISSUE!)
+        - Delete TRANSACTION_ALERT → No fraud detection notifications (SECURITY RISK!)
+        - Delete PAYMENT_REMINDER → Customers miss due dates (CUSTOMER HARM!)
+        - Delete PROMOTIONAL → Marketing campaign stops (OK if campaign ended)
+
+        **Dangerous Deletions (DO NOT DELETE):**
+        - **REGULATORY/COMPLIANCE** templates (statements, disclosures, privacy notices)
+        - **SECURITY** alerts (fraud, suspicious activity)
+        - **CRITICAL** notifications (payment due, overdraft, balance low)
+        - **TRANSACTIONAL** confirmations (legally required receipts)
+
+        **Safe Deletions:**
+        - Promotional campaigns (ended)
+        - Seasonal greetings
+        - Test templates
+        - Duplicate templates
+        - Unused templates
+
+        **Related Endpoints:**
+        - PUT /api/products/{code}/communications/{id} - Disable instead of delete
+        - GET /api/products/{code}/communications/{id} - Verify before deletion
+        - GET /api/products/{code}/communications - View remaining templates
       operationId: deleteCommunication
       parameters:
         - name: productCode
@@ -2262,7 +2683,13 @@ paths:
           example: SAV-HIGH-YIELD-2025
         - name: commId
           in: path
-          description: "Communication template ID (UUID) to permanently delete.\n\nâš ï¸\x8F WARNING: This action cannot be undone!\nCustomers will stop receiving these notifications immediately.\nVerify template is not legally required (regulatory/compliance).\nConsider disabling the template instead using PUT endpoint with isActive=false.\n"
+          description: |
+            Communication template ID (UUID) to permanently delete.
+
+            ⚠️ WARNING: This action cannot be undone!
+            Customers will stop receiving these notifications immediately.
+            Verify template is not legally required (regulatory/compliance).
+            Consider disabling the template instead using PUT endpoint with isActive=false.
           required: true
           schema:
             type: string
@@ -2402,7 +2829,25 @@ paths:
       tags:
         - Product Charges & Fees
       summary: Remove charge from product (permanent)
-      description: "Permanently delete a fee or charge from product configuration.\n\n**âš ï¸\x8F WARNING: Irreversible operation**\n\n**Recommended Alternative:**\n- Set isActive=false using PUT endpoint\n- Preserves configuration and history\n- Can be reactivated if needed\n\n**When to Delete:**\n- Incorrectly configured charge\n- Duplicate charges\n- Test data cleanup\n\n**Use Cases:**\n- Remove obsolete fees\n- Clean up incorrect configuration\n- Simplify fee structure\n"
+      description: |
+        Permanently delete a fee or charge from product configuration.
+
+        **⚠️ WARNING: Irreversible operation**
+
+        **Recommended Alternative:**
+        - Set isActive=false using PUT endpoint
+        - Preserves configuration and history
+        - Can be reactivated if needed
+
+        **When to Delete:**
+        - Incorrectly configured charge
+        - Duplicate charges
+        - Test data cleanup
+
+        **Use Cases:**
+        - Remove obsolete fees
+        - Clean up incorrect configuration
+        - Simplify fee structure
       operationId: deleteCharge
       parameters:
         - name: productCode
@@ -2413,7 +2858,7 @@ paths:
             type: string
         - name: chargeId
           in: path
-          description: "Charge ID to delete (âš ï¸\x8F Cannot be undone!)"
+          description: Charge ID to delete (⚠️ Cannot be undone!)
           required: true
           schema:
             type: string
@@ -2621,7 +3066,67 @@ paths:
       tags:
         - Product Balance Types
       summary: Remove balance type from product (permanent)
-      description: "Permanently remove a balance type from product configuration. This marks the balance type\nas no longer applicable for this product.\n\n**âš ï¸\x8F WARNING: This operation is IRREVERSIBLE**\n\n**What gets deleted:**\n- Balance type configuration for product\n- Balance type mapping\n\n**What is NOT affected:**\n- Existing account balances (preserved)\n- Historical balance data\n- Transaction history\n- Audit trail\n\n**When to Delete:**\n- Incorrectly configured balance type\n- Product structure simplification\n- Balance type no longer needed\n- Configuration error correction\n\n**Recommended Alternative:**\nInstead of deletion, consider:\n1. Set isActive = false using PUT endpoint\n2. Preserves configuration and history\n3. Can be reactivated if needed\n4. Maintains audit trail\n\n**Common Use Cases:**\n\n**Scenario 1: Remove Unused Balance Type**\n- OVERDRAFT added but never used\n- Product doesn't offer overdraft\n- Clean up configuration\n\n**Scenario 2: Product Restructuring**\n- Changing product balance structure\n- Removing obsolete balance categories\n- Simplifying balance tracking\n\n**Scenario 3: Configuration Cleanup**\n- Test data removal\n- Duplicate balance types\n- Error correction\n\n**â\x9DŒ WRONG USE CASES:**\n- Temporarily stopping balance tracking â†’ Use isActive=false\n- Balance type restructuring â†’ Use PUT to change type\n- Account closure â†’ Leave configuration intact\n\n**Important Validation:**\n- Verify no active accounts using this balance\n- Check for dependent configurations\n- Document reason for removal\n- Backup configuration if needed\n\n**Related Endpoints:**\n- PUT /api/products/{code}/balances/{type} - Update (preferred)\n- GET /api/products/{code}/balances - View remaining types\n- POST /api/products/{code}/balances - Add replacement type\n"
+      description: |
+        Permanently remove a balance type from product configuration. This marks the balance type
+        as no longer applicable for this product.
+
+        **⚠️ WARNING: This operation is IRREVERSIBLE**
+
+        **What gets deleted:**
+        - Balance type configuration for product
+        - Balance type mapping
+
+        **What is NOT affected:**
+        - Existing account balances (preserved)
+        - Historical balance data
+        - Transaction history
+        - Audit trail
+
+        **When to Delete:**
+        - Incorrectly configured balance type
+        - Product structure simplification
+        - Balance type no longer needed
+        - Configuration error correction
+
+        **Recommended Alternative:**
+        Instead of deletion, consider:
+        1. Set isActive = false using PUT endpoint
+        2. Preserves configuration and history
+        3. Can be reactivated if needed
+        4. Maintains audit trail
+
+        **Common Use Cases:**
+
+        **Scenario 1: Remove Unused Balance Type**
+        - OVERDRAFT added but never used
+        - Product doesn't offer overdraft
+        - Clean up configuration
+
+        **Scenario 2: Product Restructuring**
+        - Changing product balance structure
+        - Removing obsolete balance categories
+        - Simplifying balance tracking
+
+        **Scenario 3: Configuration Cleanup**
+        - Test data removal
+        - Duplicate balance types
+        - Error correction
+
+        **❌ WRONG USE CASES:**
+        - Temporarily stopping balance tracking → Use isActive=false
+        - Balance type restructuring → Use PUT to change type
+        - Account closure → Leave configuration intact
+
+        **Important Validation:**
+        - Verify no active accounts using this balance
+        - Check for dependent configurations
+        - Document reason for removal
+        - Backup configuration if needed
+
+        **Related Endpoints:**
+        - PUT /api/products/{code}/balances/{type} - Update (preferred)
+        - GET /api/products/{code}/balances - View remaining types
+        - POST /api/products/{code}/balances - Add replacement type
       operationId: deleteBalance
       parameters:
         - name: productCode
@@ -2633,7 +3138,20 @@ paths:
           example: LOAN-PERSONAL-5Y
         - name: balanceType
           in: path
-          description: "Balance type to permanently remove.\n\nâš ï¸\x8F WARNING: This cannot be undone!\n\nConsider using PUT with isActive=false instead.\n\nValid values:\n- LOAN_PRINCIPAL\n- LOAN_INTEREST\n- FD_PRINCIPAL\n- FD_INTEREST\n- OVERDRAFT\n- PENALTY\n"
+          description: |
+            Balance type to permanently remove.
+
+            ⚠️ WARNING: This cannot be undone!
+
+            Consider using PUT with isActive=false instead.
+
+            Valid values:
+            - LOAN_PRINCIPAL
+            - LOAN_INTEREST
+            - FD_PRINCIPAL
+            - FD_INTEREST
+            - OVERDRAFT
+            - PENALTY
           required: true
           schema:
             type: string
@@ -2935,7 +3453,7 @@ paths:
                   productCode: LOAN-PERSONAL
                   productName: Personal Loan
                   productType: LOAN
-                  description: Unsecured personal loan up to Â¥5,000,000
+                  description: Unsecured personal loan up to ¥5,000,000
                   currency: JPY
                   status: ACTIVE
                   interestType: COMPOUND
@@ -3234,8 +3752,8 @@ paths:
 
         **Scenario 1: Savings Account Setup**
         Configure basic transaction types:
-        - DEPOSIT (credit): min â‚¹1,000, max â‚¹1,0000,000
-        - WITHDRAWAL (debit): min â‚¹2,000, max â‚¹2,00,000 per transaction
+        - DEPOSIT (credit): min ₹1,000, max ₹1,0000,000
+        - WITHDRAWAL (debit): min ₹2,000, max ₹2,00,000 per transaction
         - INTEREST_ACCRUED (credit): automated monthly interest posting
 
         **Scenario 2: Fixed Deposit Product**
@@ -3575,14 +4093,14 @@ paths:
                         ruleType: VALIDATION
                         ruleExpression: opening_balance >= 100
                         rulePriority: 2
-                        errorMessage: 'Minimum opening balance: â‚¹10,000'
+                        errorMessage: 'Minimum opening balance: ₹10,000'
                         isActive: true
                       - ruleId: 993e8400-e29b-41d4-a716-446655440003
                         ruleName: Daily Withdrawal Limit
                         ruleType: TRANSACTION_LIMIT
                         ruleExpression: daily_withdrawals <= 1000
                         rulePriority: 3
-                        errorMessage: 'Daily limit: â‚¹1,00,000'
+                        errorMessage: 'Daily limit: ₹1,00,000'
                         isActive: true
                     totalElements: 3
                     totalPages: 1
@@ -3669,9 +4187,9 @@ paths:
         **Use Cases:**
 
         **Scenario 1: Minimum Balance Rule**
-        - Rule: Minimum balance must be â‚¹10,000
+        - Rule: Minimum balance must be ₹10,000
         - Type: VALIDATION
-        - Action: Reject if balance < â‚¹10,000
+        - Action: Reject if balance < ₹10,000
         - Penalty: $5 fee if falls below
 
         **Scenario 2: Age Restriction Rule**
@@ -3681,7 +4199,7 @@ paths:
         - Exception: Joint account with parent
 
         **Scenario 3: Daily Withdrawal Limit**
-        - Rule: Maximum â‚¹1,00,000 withdrawal per day
+        - Rule: Maximum ₹1,00,000 withdrawal per day
         - Type: TRANSACTION_LIMIT
         - Action: Decline if exceeds limit
         - Reset: Daily at midnight
@@ -4381,8 +4899,8 @@ paths:
         **Use Cases:**
 
         **Scenario 1: Tiered Savings Interest**
-        - Tier 1: â‚¹0 - â‚¹10,00,000 at 3.0% APY
-        - Tier 2: $10,001 - â‚¹50,00,000 at 3.5% APY
+        - Tier 1: ₹0 - ₹10,00,000 at 3.0% APY
+        - Tier 2: $10,001 - ₹50,00,000 at 3.5% APY
         - Tier 3: $50,001+ at 4.0% APY
         - Higher balances earn better rates
 
@@ -4393,14 +4911,14 @@ paths:
         - Longer tenure earns higher rates
 
         **Scenario 3: Loan Amount Tiers**
-        - â‚¹0 - â‚¹25,00,000 at 8.5% APR
+        - ₹0 - ₹25,00,000 at 8.5% APR
         - $25,001 - $100,000 at 7.5% APR
-        - â‚¹1,00,00,100+ at 6.5% APR
+        - ₹1,00,00,100+ at 6.5% APR
         - Larger loans get better rates
 
         **Scenario 4: Promotional Rate Tier**
-        - Special introductory rate for first â‚¹5,00,000
-        - 5.0% for balances â‚¹0 - â‚¹5,00,000
+        - Special introductory rate for first ₹5,00,000
+        - 5.0% for balances ₹0 - ₹5,00,000
         - Then regular tiers apply
 
         **Tier Design Best Practices:**
@@ -4498,7 +5016,7 @@ paths:
                   description: Overlapping Tier
                   value:
                     error: Conflict
-                    message: Balance range â‚¹5,00,000 - â‚¹15,00,000 overlaps with existing tier 'Tier 1' (â‚¹0 - â‚¹10,00,000)
+                    message: Balance range ₹5,00,000 - ₹15,00,000 overlaps with existing tier 'Tier 1' (₹0 - ₹10,00,000)
                     timestamp: '2025-10-15T10:30:00'
         '404':
           description: Product not found
@@ -4780,7 +5298,7 @@ paths:
 
         **Scenario 1: Transaction Alerts**
         Notify customers of account activity:
-        - SMS for withdrawals over â‚¹50,000
+        - SMS for withdrawals over ₹50,000
         - Email for all transfers
         - Push notification for card purchases
         - Immediate delivery
@@ -5064,7 +5582,7 @@ paths:
         percentage-based, with various frequency options.
 
         **Charge Types:**
-        - **FLAT**: Fixed amount (e.g., â‚¹500 monthly maintenance fee)
+        - **FLAT**: Fixed amount (e.g., ₹500 monthly maintenance fee)
         - **PERCENTAGE**: Percentage of amount (e.g., 2% transaction fee)
 
         **Frequency Options:**
@@ -5077,30 +5595,30 @@ paths:
         **Common Charge Examples:**
 
         **Savings Account:**
-        - Minimum balance fee: â‚¹500 FLAT, MONTHLY
-        - ATM fee: â‚¹200 FLAT, PER_OCCURRENCE
-        - Account closure: â‚¹2,500 FLAT, ONE_TIME
+        - Minimum balance fee: ₹500 FLAT, MONTHLY
+        - ATM fee: ₹200 FLAT, PER_OCCURRENCE
+        - Account closure: ₹2,500 FLAT, ONE_TIME
 
         **Loan Product:**
         - Origination fee: 2% PERCENTAGE, ONE_TIME
-        - Late payment penalty: â‚¹3,500 FLAT, PER_OCCURRENCE
+        - Late payment penalty: ₹3,500 FLAT, PER_OCCURRENCE
         - Prepayment penalty: 1% PERCENTAGE, PER_OCCURRENCE
 
         **Current Account:**
-        - Monthly maintenance: â‚¹1,000 FLAT, MONTHLY
-        - Checkbook fee: â‚¹1,500 FLAT, PER_OCCURRENCE
-        - Wire transfer: â‚¹2,500 FLAT, PER_OCCURRENCE
+        - Monthly maintenance: ₹1,000 FLAT, MONTHLY
+        - Checkbook fee: ₹1,500 FLAT, PER_OCCURRENCE
+        - Wire transfer: ₹2,500 FLAT, PER_OCCURRENCE
 
         **Use Cases:**
 
         **Scenario 1: Account Maintenance Fee**
         - Monthly fee for low balance accounts
-        - â‚¹500 flat fee charged monthly
+        - ₹500 flat fee charged monthly
         - Waived if min balance maintained
 
         **Scenario 2: Transaction Charges**
         - Fee per wire transfer
-        - â‚¹2,500 flat fee per occurrence
+        - ₹2,500 flat fee per occurrence
         - Applied immediately on transaction
 
         **Scenario 3: Loan Origination Fee**
@@ -5458,6 +5976,494 @@ paths:
                 error: Resource Not Found
                 message: 'Product not found with code: LOAN-INVALID-2025'
                 timestamp: '2025-10-15T10:30:00'
+  /api/products/{productCode}/transactions/{transactionCode}/audit-trail:
+    get:
+      tags:
+        - Product Transaction Types
+        - Product Transaction Configuration
+      summary: Get complete audit trail of a specific transaction
+      description: Retrieve ALL versions of a specific transaction configuration for audit purposes.
+      operationId: getTransactionAuditTrail
+      parameters:
+        - name: productCode
+          in: path
+          description: Product code
+          required: true
+          schema:
+            type: string
+        - name: transactionCode
+          in: path
+          description: Transaction code
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductTransactionDTO'
+  /api/products/{productCode}/transactions/audit-trail:
+    get:
+      tags:
+        - Product Transaction Types
+        - Product Transaction Configuration
+      summary: Get complete audit trail of all transactions for a product
+      description: Retrieve ALL versions of ALL transaction configurations for audit purposes.
+      operationId: getTransactionsAuditTrail
+      parameters:
+        - name: productCode
+          in: path
+          description: Product code
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductTransactionDTO'
+  /api/products/{productCode}/rules/{ruleCode}/audit-trail:
+    get:
+      tags:
+        - Product Business Rules
+      summary: Get complete audit trail of a specific rule
+      description: Retrieve ALL versions of a specific business rule for audit purposes.
+      operationId: getRuleAuditTrail
+      parameters:
+        - name: productCode
+          in: path
+          description: Product code
+          required: true
+          schema:
+            type: string
+        - name: ruleCode
+          in: path
+          description: Rule code
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductRuleDTO'
+  /api/products/{productCode}/rules/audit-trail:
+    get:
+      tags:
+        - Product Business Rules
+      summary: Get complete audit trail of all rules for a product
+      description: Retrieve ALL versions of ALL business rules for audit purposes.
+      operationId: getRulesAuditTrail
+      parameters:
+        - name: productCode
+          in: path
+          description: Product code
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductRuleDTO'
+  /api/products/{productCode}/roles/{roleCode}/audit-trail:
+    get:
+      tags:
+        - Product Roles & Permissions
+        - Product Role Management
+      summary: Get complete audit trail of a specific role
+      description: Retrieve ALL versions of a specific role configuration for audit purposes.
+      operationId: getRoleAuditTrail
+      parameters:
+        - name: productCode
+          in: path
+          description: Product code
+          required: true
+          schema:
+            type: string
+        - name: roleCode
+          in: path
+          description: Role code
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductRoleDTO'
+  /api/products/{productCode}/roles/audit-trail:
+    get:
+      tags:
+        - Product Roles & Permissions
+        - Product Role Management
+      summary: Get complete audit trail of all roles for a product
+      description: Retrieve ALL versions of ALL role configurations for audit purposes.
+      operationId: getRolesAuditTrail
+      parameters:
+        - name: productCode
+          in: path
+          description: Product code
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductRoleDTO'
+  /api/products/{productCode}/interest-rates/{rateCode}/audit-trail:
+    get:
+      tags:
+        - Product Interest Rates
+      summary: Get complete audit trail of a specific interest rate
+      description: |
+        Retrieve ALL versions of a specific interest rate, including deleted and updated versions.
+        This endpoint is designed for detailed audit tracking of a single rate configuration.
+
+        **What it returns:**
+        - All versions of the specified interest rate
+        - Complete history from creation to deletion
+        - Ordered by creation date (newest first)
+        - Shows exact values at each point in time
+
+        **Use Cases:**
+
+        **Scenario 1: Rate Change Investigation**
+        - Track all changes to a specific rate
+        - Identify who made each change
+        - Verify change authorization
+
+        **Scenario 2: Dispute Resolution**
+        - Prove what rate was active at specific date
+        - Show complete change history
+        - Resolve customer disputes
+
+        **Scenario 3: Error Analysis**
+        - Identify when incorrect rate was entered
+        - Trace correction history
+        - Prevent similar errors
+      operationId: getInterestRateAuditTrail
+      parameters:
+        - name: productCode
+          in: path
+          description: Product code
+          required: true
+          schema:
+            type: string
+          example: FD001
+        - name: rateCode
+          in: path
+          description: Interest rate code
+          required: true
+          schema:
+            type: string
+          example: INT12M001
+      responses:
+        '200':
+          description: Audit trail retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: string
+        '404':
+          description: Product or rate not found
+          content:
+            application/json: {}
+  /api/products/{productCode}/interest-rates/audit-trail:
+    get:
+      tags:
+        - Product Interest Rates
+      summary: Get complete audit trail of all interest rates for a product
+      description: |
+        Retrieve ALL versions of ALL interest rates for a product, including deleted and updated versions.
+        This endpoint is designed for audit purposes and compliance tracking.
+
+        **What it returns:**
+        - All versions of all interest rate configurations
+        - Includes records with crud_value = 'C', 'U', and 'D'
+        - Ordered by creation date (newest first)
+        - No pagination - returns complete history
+
+        **Use Cases:**
+
+        **Scenario 1: Compliance Audit**
+        - Auditors need complete history of rate changes
+        - Track who changed rates and when
+        - Verify regulatory compliance
+
+        **Scenario 2: Change Analysis**
+        - Analyze rate change patterns over time
+        - Identify frequency of rate adjustments
+        - Review historical rate decisions
+
+        **Scenario 3: Rollback Investigation**
+        - Understand what rates were before changes
+        - Identify when incorrect rates were applied
+        - Determine correct rollback point
+
+        **Response Details:**
+        - Each version is a complete snapshot at that point in time
+        - Multiple versions of same rateCode may exist
+        - crud_value indicates operation: C=Create, U=Update, D=Delete
+      operationId: getInterestRatesAuditTrail
+      parameters:
+        - name: productCode
+          in: path
+          description: Product code
+          required: true
+          schema:
+            type: string
+          example: FD001
+      responses:
+        '200':
+          description: Audit trail retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: string
+        '404':
+          description: Product not found
+          content:
+            application/json: {}
+  /api/products/{productCode}/communications/{commCode}/audit-trail:
+    get:
+      tags:
+        - Product Communication Templates
+      summary: Get complete audit trail of a specific communication template
+      description: Retrieve ALL versions of a specific communication template for audit purposes.
+      operationId: getCommunicationAuditTrail
+      parameters:
+        - name: productCode
+          in: path
+          description: Product code
+          required: true
+          schema:
+            type: string
+        - name: commCode
+          in: path
+          description: Communication code
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductCommunicationDTO'
+  /api/products/{productCode}/communications/audit-trail:
+    get:
+      tags:
+        - Product Communication Templates
+      summary: Get complete audit trail of all communications for a product
+      description: Retrieve ALL versions of ALL communication templates for audit purposes.
+      operationId: getCommunicationsAuditTrail
+      parameters:
+        - name: productCode
+          in: path
+          description: Product code
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductCommunicationDTO'
+  /api/products/{productCode}/charges/{chargeCode}/audit-trail:
+    get:
+      tags:
+        - Product Charges & Fees
+      summary: Get complete audit trail of a specific charge
+      description: Retrieve ALL versions of a specific charge for audit purposes.
+      operationId: getChargeAuditTrail
+      parameters:
+        - name: productCode
+          in: path
+          description: Product code
+          required: true
+          schema:
+            type: string
+          example: FD001
+        - name: chargeCode
+          in: path
+          description: Charge code
+          required: true
+          schema:
+            type: string
+          example: FEE001
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductChargeDTO'
+  /api/products/{productCode}/charges/audit-trail:
+    get:
+      tags:
+        - Product Charges & Fees
+      summary: Get complete audit trail of all charges for a product
+      description: Retrieve ALL versions of ALL charges for a product for audit purposes.
+      operationId: getChargesAuditTrail
+      parameters:
+        - name: productCode
+          in: path
+          description: Product code
+          required: true
+          schema:
+            type: string
+          example: FD001
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductChargeDTO'
+  /api/products/{productCode}/balances/{balanceType}/audit-trail:
+    get:
+      tags:
+        - Product Balance Types
+      summary: Get complete audit trail of a specific balance type
+      description: Retrieve ALL versions of a specific balance type configuration for audit purposes.
+      operationId: getBalanceAuditTrail
+      parameters:
+        - name: productCode
+          in: path
+          description: Product code
+          required: true
+          schema:
+            type: string
+        - name: balanceType
+          in: path
+          description: Balance type
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductBalanceDTO'
+  /api/products/{productCode}/balances/audit-trail:
+    get:
+      tags:
+        - Product Balance Types
+      summary: Get complete audit trail of all balances for a product
+      description: Retrieve ALL versions of ALL balance type configurations for audit purposes.
+      operationId: getBalancesAuditTrail
+      parameters:
+        - name: productCode
+          in: path
+          description: Product code
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductBalanceDTO'
+  /api/products/{productCode}/audit-trail:
+    get:
+      tags:
+        - Product Management
+      summary: Get complete audit trail of a product
+      description: |
+        Retrieve ALL versions of a product, including deleted and updated versions.
+        This endpoint is designed for audit purposes and compliance tracking.
+
+        **What it returns:**
+        - All versions of the product configuration
+        - Includes records with crud_value = 'C', 'U', and 'D'
+        - Ordered by creation date (newest first)
+        - Complete history from creation to current state
+
+        **Use Cases:**
+
+        **Scenario 1: Compliance Audit**
+        - Track all product configuration changes
+        - Verify who made changes and when
+        - Ensure regulatory compliance
+
+        **Scenario 2: Change History Analysis**
+        - Review product evolution over time
+        - Identify change patterns
+        - Analyze configuration decisions
+
+        **Scenario 3: Rollback Investigation**
+        - Determine previous product states
+        - Identify when changes occurred
+        - Support rollback decisions
+      operationId: getProductAuditTrail
+      parameters:
+        - name: productCode
+          in: path
+          description: Product code to retrieve audit trail for
+          required: true
+          schema:
+            type: string
+          example: FD001
+      responses:
+        '200':
+          description: Audit trail retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: string
+        '404':
+          description: Product not found
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductDetailsDTO'
   /api/products/search:
     get:
       tags:
@@ -5473,9 +6479,9 @@ paths:
         - **Date Range**: Filter by effective date period (startDate + endDate)
 
         **Filter Combinations:**
-        - No parameters â†’ Returns all products
-        - Single parameter â†’ Filter by that criterion only
-        - Multiple parameters â†’ AND logic (all criteria must match)
+        - No parameters → Returns all products
+        - Single parameter → Filter by that criterion only
+        - Multiple parameters → AND logic (all criteria must match)
 
         **Date Range Logic:**
         - Products where effectiveStartDate >= startDate
@@ -5735,6 +6741,37 @@ components:
         createdAt:
           type: string
           format: date-time
+        efctv_date:
+          type: string
+          format: date-time
+        crud_value:
+          type: string
+          enum:
+            - C
+            - R
+            - U
+            - D
+        user_id:
+          type: string
+        ws_id:
+          type: string
+        prgm_id:
+          type: string
+        host_ts:
+          type: string
+          format: date-time
+        local_ts:
+          type: string
+          format: date-time
+        acpt_ts:
+          type: string
+          format: date-time
+        acpt_ts_utc_ofst:
+          type: string
+          format: date-time
+        uuid_reference:
+          type: string
+          format: uuid
     ProductChargeDTO:
       type: object
       properties:
@@ -5742,6 +6779,8 @@ components:
           type: string
           format: uuid
         chargeCode:
+          type: string
+        chargeName:
           type: string
         chargeType:
           type: string
@@ -5764,6 +6803,45 @@ components:
             - ANNUALLY
         amount:
           type: number
+        debitCredit:
+          type: string
+          enum:
+            - DEBIT
+            - CREDIT
+        createdAt:
+          type: string
+          format: date-time
+        efctv_date:
+          type: string
+          format: date-time
+        crud_value:
+          type: string
+          enum:
+            - C
+            - R
+            - U
+            - D
+        user_id:
+          type: string
+        ws_id:
+          type: string
+        prgm_id:
+          type: string
+        host_ts:
+          type: string
+          format: date-time
+        local_ts:
+          type: string
+          format: date-time
+        acpt_ts:
+          type: string
+          format: date-time
+        acpt_ts_utc_ofst:
+          type: string
+          format: date-time
+        uuid_reference:
+          type: string
+          format: uuid
     ProductCommunicationDTO:
       type: object
       properties:
@@ -5791,6 +6869,40 @@ components:
         frequencyLimit:
           type: integer
           format: int32
+        createdAt:
+          type: string
+          format: date-time
+        efctv_date:
+          type: string
+          format: date-time
+        crud_value:
+          type: string
+          enum:
+            - C
+            - R
+            - U
+            - D
+        user_id:
+          type: string
+        ws_id:
+          type: string
+        prgm_id:
+          type: string
+        host_ts:
+          type: string
+          format: date-time
+        local_ts:
+          type: string
+          format: date-time
+        acpt_ts:
+          type: string
+          format: date-time
+        acpt_ts_utc_ofst:
+          type: string
+          format: date-time
+        uuid_reference:
+          type: string
+          format: uuid
     ProductDetailsDTO:
       type: object
       properties:
@@ -5867,6 +6979,34 @@ components:
         efctv_date:
           type: string
           format: date-time
+        crud_value:
+          type: string
+          enum:
+            - C
+            - R
+            - U
+            - D
+        user_id:
+          type: string
+        ws_id:
+          type: string
+        prgm_id:
+          type: string
+        host_ts:
+          type: string
+          format: date-time
+        local_ts:
+          type: string
+          format: date-time
+        acpt_ts:
+          type: string
+          format: date-time
+        acpt_ts_utc_ofst:
+          type: string
+          format: date-time
+        uuid_reference:
+          type: string
+          format: uuid
     ProductInterestDTO:
       type: object
       properties:
@@ -5886,6 +7026,40 @@ components:
           type: number
         rateNonCumulativeYearly:
           type: number
+        createdAt:
+          type: string
+          format: date-time
+        efctv_date:
+          type: string
+          format: date-time
+        crud_value:
+          type: string
+          enum:
+            - C
+            - R
+            - U
+            - D
+        user_id:
+          type: string
+        ws_id:
+          type: string
+        prgm_id:
+          type: string
+        host_ts:
+          type: string
+          format: date-time
+        local_ts:
+          type: string
+          format: date-time
+        acpt_ts:
+          type: string
+          format: date-time
+        acpt_ts_utc_ofst:
+          type: string
+          format: date-time
+        uuid_reference:
+          type: string
+          format: uuid
     ProductRoleDTO:
       type: object
       properties:
@@ -5905,6 +7079,45 @@ components:
             - GUARANTOR
         roleName:
           type: string
+        maxCount:
+          type: integer
+          format: int32
+        createdAt:
+          type: string
+          format: date-time
+        efctv_date:
+          type: string
+          format: date-time
+        crud_value:
+          type: string
+          enum:
+            - C
+            - R
+            - U
+            - D
+        user_id:
+          type: string
+        ws_id:
+          type: string
+        prgm_id:
+          type: string
+        host_ts:
+          type: string
+          format: date-time
+        local_ts:
+          type: string
+          format: date-time
+        acpt_ts:
+          type: string
+          format: date-time
+        acpt_ts_utc_ofst:
+          type: string
+          format: date-time
+        mandatory:
+          type: boolean
+        uuid_reference:
+          type: string
+          format: uuid
     ProductRuleDTO:
       type: object
       properties:
@@ -5941,6 +7154,40 @@ components:
             - MIN_MAX
             - EXACT
             - LIST
+        createdAt:
+          type: string
+          format: date-time
+        efctv_date:
+          type: string
+          format: date-time
+        crud_value:
+          type: string
+          enum:
+            - C
+            - R
+            - U
+            - D
+        user_id:
+          type: string
+        ws_id:
+          type: string
+        prgm_id:
+          type: string
+        host_ts:
+          type: string
+          format: date-time
+        local_ts:
+          type: string
+          format: date-time
+        acpt_ts:
+          type: string
+          format: date-time
+        acpt_ts_utc_ofst:
+          type: string
+          format: date-time
+        uuid_reference:
+          type: string
+          format: uuid
     ProductTransactionDTO:
       type: object
       properties:
@@ -5957,8 +7204,42 @@ components:
             - INTEREST_ACCRUED
             - DISBURSEMENT
             - PAYMENT
-        amountLimit:
-          type: number
+        createdAt:
+          type: string
+          format: date-time
+        efctv_date:
+          type: string
+          format: date-time
+        crud_value:
+          type: string
+          enum:
+            - C
+            - R
+            - U
+            - D
+        user_id:
+          type: string
+        ws_id:
+          type: string
+        prgm_id:
+          type: string
+        host_ts:
+          type: string
+          format: date-time
+        local_ts:
+          type: string
+          format: date-time
+        acpt_ts:
+          type: string
+          format: date-time
+        acpt_ts_utc_ofst:
+          type: string
+          format: date-time
+        allowed:
+          type: boolean
+        uuid_reference:
+          type: string
+          format: uuid
     ProductTransactionRequestDTO:
       type: object
       properties:
@@ -6261,8 +7542,6 @@ components:
           format: int64
         sort:
           $ref: '#/components/schemas/SortObject'
-        unpaged:
-          type: boolean
         paged:
           type: boolean
         pageNumber:
@@ -6271,6 +7550,8 @@ components:
         pageSize:
           type: integer
           format: int32
+        unpaged:
+          type: boolean
     SortObject:
       type: object
       properties:
@@ -6312,3 +7593,9 @@ components:
           format: int32
         empty:
           type: boolean
+  securitySchemes:
+    bearerAuth:
+      type: http
+      description: 'JWT token from NEXA Bank Auth Service. Format: `Bearer <your_jwt_token>`. Get token from: http://localhost:3020/api/auth/login'
+      scheme: bearer
+      bearerFormat: JWT

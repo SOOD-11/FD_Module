@@ -36,6 +36,33 @@ public record FDAccountView (
 	    @Schema(description = "Expected maturity date", example = "2026-01-15")
 	    LocalDate maturityDate,
 	    
+	    @Schema(description = "Interest rate percentage", example = "7.50")
+	    BigDecimal interestRate,
+	    
+	    @Schema(description = "Annual Percentage Yield", example = "7.76")
+	    BigDecimal apy,
+	    
+	    @Schema(description = "Customer category 1 (e.g., SENIOR, JUNIOR)", example = "JR")
+	    String category1Id,
+	    
+	    @Schema(description = "Customer category 2 (e.g., GOLD, PLATINUM)", example = "DY")
+	    String category2Id,
+	    
+	    @Schema(description = "Interest type (SIMPLE or COMPOUND)", example = "COMPOUND")
+	    String interestType,
+	    
+	    @Schema(description = "Compounding frequency (MONTHLY, QUARTERLY, YEARLY)", example = "QUARTERLY")
+	    String compoundingFrequency,
+	    
+	    @Schema(description = "Tenure value", example = "5")
+	    Integer tenureValue,
+	    
+	    @Schema(description = "Tenure unit (YEARS, MONTHS, DAYS)", example = "YEARS")
+	    String tenureUnit,
+	    
+	    @Schema(description = "Currency code", example = "INR")
+	    String currency,
+	    
 	    @Schema(description = "List of account holders and their roles")
 	    List<AccountHolderView> accountHolders
 		

@@ -19,11 +19,16 @@ import com.example.demo.dto.CreateFDAccountRequest;
 import com.example.demo.dto.EarlyWithdrawlRequest;
 import com.example.demo.dto.FDAccountView;
 import com.example.demo.dto.FDTransactionView;
+import com.example.demo.dto.FdAccountBalanceView;
 import com.example.demo.dto.PrematureWithdrawalInquiryResponse;
+import com.example.demo.service.CustomerService;
 import com.example.demo.service.FDAccountService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -45,15 +50,16 @@ import lombok.RequiredArgsConstructor;
         - **Search & Retrieval**: Find accounts by multiple criteria
         
         ## Account Creation Process
-        1. User obtains JWT token from Authentication Service (contains customer ID in 'sub' claim)
+        1. User obtains JWT token from Authentication Service (contains customer email in 'sub' claim)
         2. User creates FD calculation via Calculation Service (returns calcId)
         3. User calls POST /api/v1/accounts with JWT token and calcId
-        4. System extracts customer ID from JWT token automatically
-        5. System fetches calculation details (maturity date, interest rate, product code)
-        6. System fetches product configuration (balances, roles, communications)
-        7. System creates account with all balance types (FD_PRINCIPAL, FD_INTEREST, PENALTY)
-        8. System publishes events to Kafka (account creation, communications)
-        9. System returns created account details
+        4. System extracts customer email from JWT token automatically
+        5. System calls Customer Service to get customer profile and customerNumber
+        6. System fetches calculation details (maturity date, interest rate, product code)
+        7. System fetches product configuration (balances, roles, communications)
+        8. System creates account with all balance types (FD_PRINCIPAL, FD_INTEREST, PENALTY)
+        9. System publishes events to Kafka (account creation, communications)
+        10. System returns created account details
         
         ## Role Management
         Products define which roles are allowed. Common roles:
@@ -77,7 +83,7 @@ import lombok.RequiredArgsConstructor;
         
         ## Authentication
         All endpoints require JWT Bearer token in Authorization header.
-        Customer ID is automatically extracted from token's 'sub' claim.
+        Customer email is automatically extracted from token's 'sub' claim and used to fetch customer profile.
         """)
 
 
@@ -89,9 +95,11 @@ public class FdAccountController {
 	
 	
 	 private  FDAccountService fdAccountService;
+	 private  CustomerService customerService;
 
-	public FdAccountController(FDAccountService fdAccountService) {
+	public FdAccountController(FDAccountService fdAccountService, CustomerService customerService) {
 	        this.fdAccountService = fdAccountService;
+	        this.customerService = customerService;
 	    }
 
     @Operation(
@@ -100,34 +108,37 @@ public class FdAccountController {
             Create a new Fixed Deposit account with comprehensive configuration from external services.
             
             **What This Endpoint Does:**
-            1. Extracts customer ID from JWT token's 'sub' claim (automatic, no manual input needed)
-            2. Fetches calculation details from FD Calculation Service using calcId
-            3. Fetches product configuration from Product & Pricing Service
-            4. Creates FD account with calculated maturity values
-            5. Creates balance types based on product configuration (FD_PRINCIPAL, FD_INTEREST, PENALTY)
-            6. Publishes account creation event to Kafka
-            7. Sends communication events (Email/SMS) based on product templates
-            8. Returns complete account details
+            1. Extracts customer email from JWT token's 'sub' claim (automatic, no manual input needed)
+            2. Calls Customer Service to get customer profile and customerNumber
+            3. Fetches calculation details from FD Calculation Service using calcId
+            4. Fetches product configuration from Product & Pricing Service
+            5. Creates FD account with calculated maturity values
+            6. Creates balance types based on product configuration (FD_PRINCIPAL, FD_INTEREST, PENALTY)
+            7. Publishes account creation event to Kafka
+            8. Sends communication events (Email/SMS) based on product templates
+            9. Returns complete account details
             
             **Request Body:**
             - `accountName`: Display name for the account (e.g., "My Retirement Fund")
             - `calcId`: Calculation ID from FD Calculation Service (obtained from /api/fd/calculations)
             
             **JWT Token Requirements:**
-            - Must contain 'sub' claim with customer ID
+            - Must contain 'sub' claim with customer email
             - Must be valid and not expired
             - Obtained from Authentication Service at http://localhost:3020
             
             **External Service Calls:**
             This endpoint integrates with:
-            1. **FD Calculation Service** (http://localhost:4030)
+            1. **Customer Service** (http://localhost:1005)
+               - Fetches: customer profile, customerNumber (business identifier)
+            2. **FD Calculation Service** (http://localhost:4030)
                - Fetches: maturity value, maturity date, interest rates, product code
-            2. **Product & Pricing Service** (http://localhost:8080)
+            3. **Product & Pricing Service** (http://localhost:8080)
                - Fetches: balance types, allowed roles, transaction types, communication templates, penalty charges
             
             **What Gets Created:**
             - FD Account entity with all details
-            - Account holder entry (OWNER role) using customer ID from JWT
+            - Account holder entry (OWNER role) using customerNumber from Customer Service
             - Initial deposit transaction (PRINCIPAL_DEPOSIT)
             - Multiple balance entries:
               * FD_PRINCIPAL: Set to principal amount
@@ -240,16 +251,20 @@ public class FdAccountController {
             )
             CreateFDAccountRequest request,
             @Parameter(
-                description = "JWT token containing customer ID in 'sub' claim. Obtained from Authentication Service.",
+                description = "JWT token containing customer email in 'sub' claim. Obtained from Authentication Service.",
                 required = true,
                 hidden = true
             )
             @AuthenticationPrincipal Jwt jwt) {
         
-        // Extract customer ID from JWT token (sub claim)
-        String customerId = jwt.getSubject();
+        // Extract email from JWT token (sub claim)
+        String email = jwt.getSubject();
         
-        FDAccountView createdAccount = fdAccountService.createAccount(request, customerId);
+        // Fetch customer profile from Customer Service using email
+        // and get customerNumber (e.g., CUST-20251024-000001)
+        String customerNumber = customerService.getCustomerNumberByEmail(email);
+        
+        FDAccountView createdAccount = fdAccountService.createAccount(request, customerNumber);
         return new ResponseEntity<>(createdAccount, HttpStatus.CREATED);
     }
 
@@ -450,6 +465,50 @@ public class FdAccountController {
            @RequestBody EarlyWithdrawlRequest request) {
        FDAccountView closedAccount = fdAccountService.performEarlyWithdrawal(accountNumber, request);
        return ResponseEntity.ok(closedAccount);
+   }
+
+   @Operation(
+       summary = "Get account balances",
+       description = "Retrieve all balance types (FD_PRINCIPAL, FD_INTEREST, PENALTY) for an FD account"
+   )
+   @ApiResponses(value = {
+       @ApiResponse(
+           responseCode = "200",
+           description = "Balances retrieved successfully",
+           content = @Content(
+               mediaType = "application/json",
+               schema = @Schema(implementation = FdAccountBalanceView.class),
+               examples = @ExampleObject(
+                   name = "Account Balances",
+                   value = """
+                   [
+                       {
+                           "balanceType": "FD_PRINCIPAL",
+                           "balanceAmount": 100000.00,
+                           "isActive": true,
+                           "createdAt": "2024-01-15T10:30:00",
+                           "updatedAt": "2024-01-15T10:30:00"
+                       },
+                       {
+                           "balanceType": "FD_INTEREST",
+                           "balanceAmount": 5250.00,
+                           "isActive": true,
+                           "createdAt": "2024-01-15T10:30:00",
+                           "updatedAt": "2024-03-15T00:00:00"
+                       }
+                   ]
+                   """
+               )
+           )
+       ),
+       @ApiResponse(responseCode = "404", description = "Account not found")
+   })
+   @GetMapping("/{accountNumber}/balances")
+   public ResponseEntity<List<FdAccountBalanceView>> getAccountBalances(
+           @Parameter(description = "FD Account number", required = true, example = "FD202401150001")
+           @PathVariable("accountNumber") String accountNumber) {
+       List<FdAccountBalanceView> balances = fdAccountService.getAccountBalances(accountNumber);
+       return ResponseEntity.ok(balances);
    }
 
 }

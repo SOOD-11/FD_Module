@@ -19,6 +19,7 @@ import com.example.demo.dto.EarlyWithdrawlRequest;
 import com.example.demo.dto.FDAccountView;
 import com.example.demo.dto.FDCalculationResponse;
 import com.example.demo.dto.FDTransactionView;
+import com.example.demo.dto.FdAccountBalanceView;
 import com.example.demo.dto.PrematureWithdrawalInquiryResponse;
 import com.example.demo.dto.ProductDetailsResponse;
 import com.example.demo.entities.Accountholder;
@@ -67,31 +68,32 @@ public class FDAccountServiceImpl implements FDAccountService{
 
         // Step 1: Fetch calculation details from FD Calculation Service
         FDCalculationResponse calculation = fdCalculationService.getCalculation(request.calcId());
-        log.info("Fetched calculation details: maturityValue={}, maturityDate={}", 
-                 calculation.getMaturityValue(), calculation.getMaturityDate());
+        log.info("Fetched calculation details: maturityValue={}, maturityDate={}, principalAmount={}", 
+                 calculation.getMaturityValue(), calculation.getMaturityDate(), calculation.getPrincipalAmount());
+        log.info("Product code: {}, Tenure: {} {}", 
+                 calculation.getProductCode(), calculation.getTenureValue(), calculation.getTenureUnit());
 
-        // Step 2: Generate account number
+        // Step 2: Fetch product details from Product Service
+        ProductDetailsResponse product = productService.getProductDetails(calculation.getProductCode());
+        log.info("Fetched product details: currency={}, interestType={}, compoundingFrequency={}", 
+                 product.getCurrency(), product.getInterestType(), product.getCompoundingFrequency());
+
+        // Step 3: Generate account number
         String accountNumber = accountNumberGenerator.generate();
 
-        // Step 3: Calculate term in months from effective date to maturity date
+        // Step 4: Calculate term in months from effective date to maturity date
         LocalDate effectiveDate = LocalDate.now();
         LocalDate maturityDate = calculation.getMaturityDate();
         Integer termInMonths = (int) ChronoUnit.MONTHS.between(effectiveDate, maturityDate);
 
-        // Step 4: Calculate principal amount from maturity value (reverse calculation)
-        // For now, we'll need to get this from the calculation or make an assumption
-        // Assuming the calculation service should provide principal, but if not available:
-        BigDecimal principalAmount = calculatePrincipalFromMaturity(
-            calculation.getMaturityValue(), 
-            calculation.getEffectiveRate(), 
-            termInMonths
-        );
+        // Step 5: Get principal amount from calculation response
+        BigDecimal principalAmount = calculation.getPrincipalAmount();
 
-        // Step 5: Build FDAccount entity
+        // Step 6: Build FDAccount entity
         FdAccount fdAccount = new FdAccount();
         fdAccount.setAccountNumber(accountNumber);
         fdAccount.setAccountName(request.accountName());
-        fdAccount.setProductCode(calculation.getProductCode()); // Get product code from calculation response
+        fdAccount.setProductCode(calculation.getProductCode());
         fdAccount.setStatus(AccountStatus.ACTIVE);
         fdAccount.setTermInMonths(termInMonths);
         fdAccount.setInterestRate(calculation.getEffectiveRate());
@@ -101,7 +103,7 @@ public class FDAccountServiceImpl implements FDAccountService{
         fdAccount.setMaturityDate(maturityDate);
         fdAccount.setMaturityInstruction(MaturityInstruction.PAYOUT_TO_LINKED_ACCOUNT);
         
-        // Set additional calculation fields
+        // Set fields from FD Calculation Service
         fdAccount.setCalcId(calculation.getCalcId());
         fdAccount.setResultId(calculation.getResultId());
         fdAccount.setApy(calculation.getApy());
@@ -110,14 +112,21 @@ public class FDAccountServiceImpl implements FDAccountService{
         fdAccount.setPayoutAmount(calculation.getPayoutAmount());
         fdAccount.setCategory1Id(calculation.getCategory1Id());
         fdAccount.setCategory2Id(calculation.getCategory2Id());
+        fdAccount.setTenureValue(calculation.getTenureValue());
+        fdAccount.setTenureUnit(calculation.getTenureUnit());
+        
+        // Set fields from Product Service
+        fdAccount.setCurrency(product.getCurrency());
+        fdAccount.setInterestType(product.getInterestType());
+        fdAccount.setCompoundingFrequency(product.getCompoundingFrequency());
 
-        // Step 6: Build AccountHolder entity (using customerId from JWT)
+        // Step 7: Build AccountHolder entity (using customerId from JWT)
         Accountholder owner = new Accountholder();
         owner.setCustomerId(customerId);
         owner.setRoleType(RoleType.OWNER);
         owner.setOwnershipPercentage(new BigDecimal("100.00"));
 
-        // Step 7: Build initial Transaction entity
+        // Step 8: Build initial Transaction entity
         FdTransaction initialDeposit = new FdTransaction();
         initialDeposit.setTransactionType(TransactionType.PRINCIPAL_DEPOSIT);
         initialDeposit.setAmount(principalAmount);
@@ -135,8 +144,7 @@ public class FDAccountServiceImpl implements FDAccountService{
         FdAccount savedAccount = fdAccountRepository.save(fdAccount);
         log.info("Successfully created FD account with number: {}", savedAccount.getAccountNumber());
 
-        // Step 10: Fetch product details and create balance types
-        ProductDetailsResponse product = productService.getProductDetails(calculation.getProductCode());
+        // Step 10: Create balance types (product already fetched earlier)
         createAccountBalances(savedAccount, product, principalAmount);
         
         // Step 11: Publish Kafka event for account creation
@@ -236,26 +244,6 @@ public class FDAccountServiceImpl implements FDAccountService{
         }
     }
     
-    /**
-     * Helper method to calculate principal from maturity value
-     * This is a reverse calculation when maturity value is known
-     */
-    private BigDecimal calculatePrincipalFromMaturity(BigDecimal maturityValue, 
-                                                      BigDecimal interestRate, 
-                                                      Integer termInMonths) {
-        if (interestRate == null || interestRate.compareTo(BigDecimal.ZERO) == 0) {
-            return maturityValue; // No interest, principal equals maturity
-        }
-        
-        // Simple interest formula: P = M / (1 + (r * t))
-        // where M = maturity value, r = annual rate as decimal, t = time in years
-        BigDecimal rateDecimal = interestRate.divide(new BigDecimal("100"), 6, RoundingMode.HALF_UP);
-        BigDecimal timeInYears = new BigDecimal(termInMonths).divide(new BigDecimal("12"), 6, RoundingMode.HALF_UP);
-        BigDecimal divisor = BigDecimal.ONE.add(rateDecimal.multiply(timeInYears));
-        
-        return maturityValue.divide(divisor, 4, RoundingMode.HALF_UP);
-    }
-
     public FDAccountView findAccountByNumber(String accountNumber) {
         FdAccount account = fdAccountRepository.findByAccountNumber(accountNumber)
                 .orElseThrow();
@@ -379,6 +367,15 @@ public class FDAccountServiceImpl implements FDAccountService{
                 account.getMaturityAmount(),
                 account.getEffectiveDate(),
                 account.getMaturityDate(),
+                account.getInterestRate(),
+                account.getApy(),
+                account.getCategory1Id(),
+                account.getCategory2Id(),
+                account.getInterestType(),
+                account.getCompoundingFrequency(),
+                account.getTenureValue(),
+                account.getTenureUnit(),
+                account.getCurrency(),
                 holderViews
         );
     }
@@ -519,6 +516,29 @@ public class FDAccountServiceImpl implements FDAccountService{
 
         return new PrematureWithdrawalInquiryResponse(
             accountNumber, account.getPrincipalAmount(), penalizedInterestAccrued, penaltyAmount, finalPayoutAmount, today);
+    }
+
+    @Override
+    public List<FdAccountBalanceView> getAccountBalances(String accountNumber) {
+        log.info("Fetching balances for account: {}", accountNumber);
+        
+        // Fetch balances for the account
+        List<FdAccountBalance> balances = balanceRepository.findByFdAccount_AccountNumber(accountNumber);
+        
+        if (balances.isEmpty()) {
+            log.warn("No balances found for account: {}", accountNumber);
+        }
+        
+        // Map to view DTOs
+        return balances.stream()
+            .map(balance -> new FdAccountBalanceView(
+                balance.getBalanceType(),
+                balance.getBalanceAmount(),
+                balance.getIsActive(),
+                balance.getCreatedAt(),
+                balance.getUpdatedAt()
+            ))
+            .toList();
     }
 
 }

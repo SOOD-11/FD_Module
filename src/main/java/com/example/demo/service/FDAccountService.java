@@ -8,6 +8,7 @@ import com.example.demo.dto.CreateFDAccountRequest;
 import com.example.demo.dto.EarlyWithdrawlRequest;
 import com.example.demo.dto.FDAccountView;
 import com.example.demo.dto.FDTransactionView;
+import com.example.demo.dto.FdAccountBalanceView;
 import com.example.demo.dto.PrematureWithdrawalInquiryResponse;
 
 public  interface  FDAccountService {
@@ -21,4 +22,6 @@ public  interface  FDAccountService {
     PrematureWithdrawalInquiryResponse getPrematureWithdrawalInquiry(String accountNumber);
     
     FDAccountView performEarlyWithdrawal(String accountNumber, EarlyWithdrawlRequest request);
+    
+    List<FdAccountBalanceView> getAccountBalances(String accountNumber);
 }

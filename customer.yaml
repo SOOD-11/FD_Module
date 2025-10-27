@@ -1,0 +1,1001 @@
+{
+  "openapi" : "3.0.1",
+  "info" : {
+    "title" : "NEXA Bank - Customer Profile Management API",
+    "description" : "## Overview\nThe Customer Profile Management API provides comprehensive customer data management services for NEXA Bank's microservices architecture with full audit trail capabilities.\n\n## Key Features\n- **INSERT-ONLY Paradigm**: Banking-grade audit trail with zero data loss\n- **Versioned Customer Records**: Complete history of all customer changes\n- **Normalized Data Storage**: Separate tables for names, addresses, and identifications\n- **Customer Number System**: Unique business identifier across all versions\n- **CRUD Operation Tracking**: Every change tagged with C (Create), U (Update), or D (Delete)\n- **Soft Delete**: Customer deletions preserved for compliance and audit\n- **Audit Trail Access**: View complete customer history\n- **JWT Authentication**: Secure access via Auth Service tokens\n\n## INSERT-ONLY Architecture\n\n### Core Concept\nIn banking systems, data integrity and audit trails are critical. Instead of updating or deleting records, we create new versions:\n\n**Traditional Approach (NOT USED):**\n```sql\nUPDATE customers SET address = 'New Address' WHERE id = 123;  -- Old data lost!\nDELETE FROM customers WHERE id = 123;  -- Data gone forever!\n```\n\n**INSERT-ONLY Approach (IMPLEMENTED):**\n```sql\n-- Update: Insert new row with same customer_number\nINSERT INTO customers (customer_number, address, crud_operation, version_timestamp)\nVALUES ('CUST-20251023-000001', 'New Address', 'U', NOW());\n\n-- Delete: Insert new row with D operation\nINSERT INTO customers (customer_number, crud_operation, version_timestamp)\nVALUES ('CUST-20251023-000001', 'D', NOW());\n```\n\n### Benefits\n1. **Complete Audit Trail**: Every change is recorded with timestamp\n2. **Regulatory Compliance**: Meets banking audit requirements\n3. **Time Travel**: View customer state at any point in history\n4. **Rollback Capability**: Can restore previous versions if needed\n5. **Fraud Detection**: Track suspicious pattern of changes\n6. **Dispute Resolution**: Prove what data existed at specific times\n\n## Customer Number System\n\n### Format\nCustomer numbers follow the pattern: `CUST-YYYYMMDD-XXXXXX`\n\n**Example:** `CUST-20251023-000001`\n- `CUST`: Prefix indicating customer\n- `20251023`: Date created (October 23, 2025)\n- `000001`: Sequential number for that day\n\n### Key Properties\n- **Unique**: Each customer gets one number on creation\n- **Persistent**: Same number across all versions\n- **Searchable**: Easy to find all versions of a customer\n- **Human-Readable**: Date helps with support and debugging\n\n## CRUD Operations\n\n### C - Create (Initial Registration)\nWhen a customer is first created:\n```json\n{\n  \"customerId\": \"uuid-v4-abc123\",\n  \"customerNumber\": \"CUST-20251023-000001\",\n  \"crudOperation\": \"C\",\n  \"versionTimestamp\": \"2025-10-23T10:00:00Z\",\n  \"firstName\": \"John\",\n  \"email\": \"john@example.com\"\n}\n```\n\n### U - Update (Address/Name/ID Change)\nWhen customer updates their address:\n```json\n{\n  \"customerId\": \"uuid-v4-def456\",  // NEW ID\n  \"customerNumber\": \"CUST-20251023-000001\",  // SAME NUMBER\n  \"crudOperation\": \"U\",\n  \"versionTimestamp\": \"2025-10-23T14:30:00Z\",\n  \"firstName\": \"John\",\n  \"email\": \"john@example.com\",\n  \"address\": \"123 New Street\"  // Updated field\n}\n```\n\n### D - Delete (Soft Delete)\nWhen customer account is closed:\n```json\n{\n  \"customerId\": \"uuid-v4-ghi789\",  // NEW ID\n  \"customerNumber\": \"CUST-20251023-000001\",  // SAME NUMBER\n  \"crudOperation\": \"D\",\n  \"versionTimestamp\": \"2025-10-23T16:00:00Z\",\n  \"customerStatus\": \"CLOSED\"\n}\n```\n\n**Important:** All previous versions remain in database!\n\n## Normalized Data Model\n\n### Main Tables\n\n**1. customers**\n- Core customer information\n- Multiple rows per customer (one per version)\n- Linked by `customer_number`\n\n**2. customer_name_components**\n- First name, middle name, last name separated\n- Tracks name changes over time\n- Supports international name formats\n\n**3. customer_address_components**\n- Address fields stored separately\n- City, state, postal code as individual components\n- Enables address history tracking\n\n**4. customer_identification**\n- Aadhar, PAN, Passport, Driving License\n- Document verification status\n- Expiration tracking\n\n### Data Retrieval\n\n**Get Latest Version (Default):**\n```sql\nSELECT * FROM customers\nWHERE customer_number = 'CUST-20251023-000001'\n  AND crud_operation != 'D'\nORDER BY version_timestamp DESC\nLIMIT 1;\n```\n\n**Get Audit Trail:**\n```sql\nSELECT * FROM customers\nWHERE customer_number = 'CUST-20251023-000001'\nORDER BY version_timestamp DESC;\n```\n\n## API Endpoints\n\n### Profile Management\n- **POST /api/profiles** - Create customer profile (called by Auth Service)\n- **GET /api/profiles/user/{userId}** - Get customer by user ID (latest version)\n- **GET /api/profiles/email/{email}** - Get customer by email\n- **GET /api/profiles** - Get all customers (latest versions only)\n- **GET /api/profiles/search?name={name}** - Search customers by name\n\n### INSERT-ONLY Updates\n- **PUT /api/profiles/user/{userId}/address** - Update address (creates new version)\n- **PUT /api/profiles/user/{userId}/name** - Update name (creates new version)\n- **PUT /api/profiles/user/{userId}/identification** - Update ID docs (creates new version)\n\n### Audit & History\n- **GET /api/profiles/user/{userId}/audit-trail** - View all versions and changes\n\n### Soft Delete\n- **DELETE /api/profiles/user/{userId}** - Close account (creates D version)\n\n## Authentication\n\nAll endpoints require JWT token from Auth Service:\n```\nAuthorization: Bearer eyJhbGciOiJSUzI1NiJ9...\n```\n\nThe Auth Service (port 8080) issues tokens after login. Customer Service validates these tokens using the public key from Auth Service.\n\n## Integration with Auth Service\n\n### Registration Flow\n1. User submits registration to Auth Service\n2. Auth Service creates auth record (email + password)\n3. Auth Service calls Customer Service `/api/profiles` endpoint\n4. Customer Service creates customer profile with `crud_operation = 'C'`\n5. Customer Number generated: `CUST-20251023-000001`\n6. User receives JWT token\n\n### Profile Retrieval Flow\n1. Client sends request with JWT token\n2. Customer Service validates token (via Auth Service public key)\n3. Extracts userId from token\n4. Queries for latest non-deleted version\n5. Joins with name/address/identification tables\n6. Returns complete profile\n\n## Use Case Examples\n\n### Example 1: Customer Address Change\n\n**Scenario:** Customer moves to a new address\n\n**Request:**\n```bash\nPUT /api/profiles/user/usr_123/address\nAuthorization: Bearer {token}\nContent-Type: application/json\n\n{\n  \"addressLine1\": \"456 New Street\",\n  \"addressLine2\": \"Apt 5B\",\n  \"city\": \"Mumbai\",\n  \"state\": \"Maharashtra\",\n  \"country\": \"India\",\n  \"postalCode\": \"400001\"\n}\n```\n\n**What Happens:**\n1. System finds latest customer version\n2. Creates new customer row with same `customer_number`\n3. Sets `crud_operation = 'U'`\n4. Sets `version_timestamp = NOW()`\n5. Creates new address component entries\n6. Returns updated profile\n\n**Database State:**\n```\nRow 1: customer_number=CUST-001, crud_operation=C, address=\"Old Street\"\nRow 2: customer_number=CUST-001, crud_operation=U, address=\"New Street\"  â† Latest\n```\n\n### Example 2: Name Change After Marriage\n\n**Request:**\n```bash\nPUT /api/profiles/user/usr_123/name\nAuthorization: Bearer {token}\n\n{\n  \"firstName\": \"Jane\",\n  \"middleName\": \"Kumar\",\n  \"lastName\": \"Sharma\"\n}\n```\n\n**Database Changes:**\n- New customer row created (U operation)\n- New name_component rows for each name part\n- Old versions preserved for audit\n\n### Example 3: Account Closure\n\n**Request:**\n```bash\nDELETE /api/profiles/user/usr_123\nAuthorization: Bearer {token}\n```\n\n**What Happens:**\n1. New row created with `crud_operation = 'D'`\n2. `customer_status = 'CLOSED'`\n3. All previous versions remain in database\n4. GET requests will not return this customer (filtered by crud_operation != 'D')\n5. Audit trail still shows complete history\n\n### Example 4: Audit Trail Review\n\n**Request:**\n```bash\nGET /api/profiles/user/usr_123/audit-trail\nAuthorization: Bearer {token}\n```\n\n**Response:**\n```json\n[\n  {\n    \"customerId\": \"uuid-4\",\n    \"customerNumber\": \"CUST-20251023-000001\",\n    \"crudOperation\": \"D\",\n    \"versionTimestamp\": \"2025-10-23T16:00:00Z\",\n    \"email\": \"john@example.com\",\n    \"phoneNumber\": \"9876543210\"\n  },\n  {\n    \"customerId\": \"uuid-3\",\n    \"customerNumber\": \"CUST-20251023-000001\",\n    \"crudOperation\": \"U\",\n    \"versionTimestamp\": \"2025-10-23T14:30:00Z\",\n    \"email\": \"john@example.com\",\n    \"phoneNumber\": \"9876543210\"\n  },\n  {\n    \"customerId\": \"uuid-2\",\n    \"customerNumber\": \"CUST-20251023-000001\",\n    \"crudOperation\": \"U\",\n    \"versionTimestamp\": \"2025-10-23T12:00:00Z\",\n    \"email\": \"john@example.com\",\n    \"phoneNumber\": \"9876543210\"\n  },\n  {\n    \"customerId\": \"uuid-1\",\n    \"customerNumber\": \"CUST-20251023-000001\",\n    \"crudOperation\": \"C\",\n    \"versionTimestamp\": \"2025-10-23T10:00:00Z\",\n    \"email\": \"john@example.com\",\n    \"phoneNumber\": \"9876543210\"\n  }\n]\n```\n\n## Data Model Example\n\n### Customer Journey Timeline\n\n**Day 1 - 10:00 AM: Registration (C)**\n```json\n{\n  \"customerNumber\": \"CUST-20251023-000001\",\n  \"crudOperation\": \"C\",\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"email\": \"john@example.com\",\n  \"phoneNumber\": \"9876543210\",\n  \"address\": \"123 Old Street\",\n  \"city\": \"Delhi\"\n}\n```\n\n**Day 5 - 2:30 PM: Address Update (U)**\n```json\n{\n  \"customerNumber\": \"CUST-20251023-000001\",\n  \"crudOperation\": \"U\",\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"email\": \"john@example.com\",\n  \"phoneNumber\": \"9876543210\",\n  \"address\": \"456 New Street\",  // Changed\n  \"city\": \"Mumbai\"  // Changed\n}\n```\n\n**Day 10 - 11:00 AM: Name Update (U)**\n```json\n{\n  \"customerNumber\": \"CUST-20251023-000001\",\n  \"crudOperation\": \"U\",\n  \"firstName\": \"John\",\n  \"lastName\": \"Smith\",  // Changed (marriage)\n  \"email\": \"john@example.com\",\n  \"phoneNumber\": \"9876543210\",\n  \"address\": \"456 New Street\",\n  \"city\": \"Mumbai\"\n}\n```\n\n**Day 30 - 4:00 PM: Account Closed (D)**\n```json\n{\n  \"customerNumber\": \"CUST-20251023-000001\",\n  \"crudOperation\": \"D\",\n  \"customerStatus\": \"CLOSED\",\n  \"firstName\": \"John\",\n  \"lastName\": \"Smith\",\n  \"email\": \"john@example.com\"\n}\n```\n\n**All 4 rows preserved forever!**\n\n## Error Handling\n\n### Standard Error Response\n```json\n{\n  \"timestamp\": \"2025-10-23T10:30:00Z\",\n  \"status\": 400,\n  \"error\": \"Bad Request\",\n  \"message\": \"Customer profile already exists for user: usr_123\",\n  \"path\": \"/api/profiles\"\n}\n```\n\n### Common Error Codes\n- **400 Bad Request**: Invalid input, customer already exists\n- **401 Unauthorized**: Missing or invalid JWT token\n- **404 Not Found**: Customer not found or deleted\n- **500 Internal Server Error**: Server-side error\n\n## Best Practices\n\n### For Frontend Developers\n1. **Always use latest version**: Don't cache old customer data\n2. **Handle 404 gracefully**: Customer might be deleted\n3. **Show update confirmations**: Inform users about profile changes\n4. **Audit trail access**: Provide history view for customer service\n\n### For Backend Developers\n1. **Never UPDATE/DELETE**: Always INSERT new rows\n2. **Filter by crudOperation**: Exclude 'D' in normal queries\n3. **Index customerNumber**: Critical for performance\n4. **Preserve all data**: Even if fields are null in updates\n\n### For Database Administrators\n1. **Partition by date**: Use version_timestamp for partitioning\n2. **Archive old versions**: Move to separate table after 7 years\n3. **Regular backups**: Critical for compliance\n4. **Monitor table growth**: INSERT-ONLY means continuous growth\n\n## Compliance & Security\n\n### Regulatory Compliance\n- **RBI Guidelines**: Full audit trail as required\n- **Data Retention**: 7 years minimum (configurable)\n- **Right to be Forgotten**: Soft delete maintains compliance\n- **Audit Reports**: All changes tracked with timestamps\n\n### Security Features\n- **JWT Authentication**: All endpoints protected\n- **Role-Based Access**: Customer can only update their own data\n- **Audit Logging**: All API calls logged\n- **Data Encryption**: Sensitive fields encrypted at rest\n\n## Performance Considerations\n\n### Query Optimization\n- Index on `customer_number` for fast lookups\n- Index on `(customer_number, version_timestamp DESC)` for latest version\n- Index on `(crud_operation, version_timestamp)` for active customers\n\n### Scalability\n- Read replicas for heavy read workloads\n- Caching layer for frequently accessed profiles\n- Async processing for audit trail queries\n- Database partitioning by time period\n\n## Support\nFor API support, integration help, or reporting issues:\n- Email: customer-service@nexabank.com\n- Documentation: https://www.nexabank.com/api-docs/customer\n- Status: https://status.nexabank.com\n",
+    "termsOfService" : "https://www.nexabank.com/terms",
+    "contact" : {
+      "name" : "NEXA Bank Customer Service Support",
+      "url" : "https://www.nexabank.com",
+      "email" : "customer-service@nexabank.com"
+    },
+    "license" : {
+      "name" : "Proprietary",
+      "url" : "https://www.nexabank.com/license"
+    },
+    "version" : "2.0.0"
+  },
+  "servers" : [ {
+    "url" : "http://localhost:1005",
+    "description" : "Customer Module Local Development Server"
+  }, {
+    "url" : "https://api.nexabank.com/customer",
+    "description" : "Customer Module Production Server"
+  } ],
+  "security" : [ {
+    "bearerAuth" : [ ]
+  } ],
+  "tags" : [ {
+    "name" : "Customer Profile Management",
+    "description" : "CRUD operations for customer profile information"
+  }, {
+    "name" : "Audit Trail",
+    "description" : "Access complete customer history and version tracking"
+  }, {
+    "name" : "Customer Profile Management",
+    "description" : "CRUD operations for customer profile information with INSERT-ONLY paradigm"
+  }, {
+    "name" : "Profile Updates",
+    "description" : "Specialized endpoints for updating address, name, and identification (creates new versions)"
+  } ],
+  "paths" : {
+    "/api/profiles/customer/{customerNumber}" : {
+      "get" : {
+        "tags" : [ "Customer Profile Management" ],
+        "summary" : "Get customer profile by customer number",
+        "description" : "Retrieves latest non-deleted customer profile using the business identifier (customer number). This is the recommended endpoint for looking up customers by their business ID.",
+        "operationId" : "getProfileByCustomerNumber",
+        "parameters" : [ {
+          "name" : "customerNumber",
+          "in" : "path",
+          "description" : "Customer number (e.g., CUST-20251023-000001)",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "404" : {
+            "description" : "Customer profile not found",
+            "content" : {
+              "application/json" : { }
+            }
+          },
+          "200" : {
+            "description" : "Customer profile found",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserProfileResponse"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      },
+      "put" : {
+        "tags" : [ "Customer Profile Management" ],
+        "summary" : "Update customer profile by customer number",
+        "description" : "Updates customer profile information. Customers can only update their own profile, admins can update any profile.",
+        "operationId" : "updateProfileByCustomerNumber",
+        "parameters" : [ {
+          "name" : "customerNumber",
+          "in" : "path",
+          "description" : "Customer number (e.g., CUST-20251024-000001)",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          },
+          "example" : "CUST-20251024-000001"
+        } ],
+        "requestBody" : {
+          "description" : "Updated profile information (Note: userId comes from JWT token, identification documents should be updated via /identification endpoint)",
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateUserProfileRequest"
+              },
+              "examples" : {
+                "Update Profile Example" : {
+                  "summary" : "Example request to update customer profile",
+                  "description" : "Only include fields you want to update. userId is read from JWT token, not from request body. Identification documents (aadhar, pan, etc.) should be updated via the /identification endpoint.",
+                  "value" : {
+                    "email" : "updated.email@example.com",
+                    "firstName" : "John",
+                    "lastName" : "Doe",
+                    "middleName" : "Michael",
+                    "dateOfBirth" : "1990-01-15",
+                    "gender" : "Male",
+                    "nationality" : "Indian",
+                    "phoneNumber" : "+919876543210",
+                    "alternatePhone" : "+919876543211",
+                    "addressLine1" : "123 Main Street",
+                    "addressLine2" : "Apartment 4B",
+                    "city" : "Mumbai",
+                    "state" : "Maharashtra",
+                    "country" : "India",
+                    "postalCode" : "400001"
+                  }
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "Customer profile updated successfully",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserProfileResponse"
+                },
+                "example" : {
+                  "customerId" : "550e8400-e29b-41d4-a716-446655440000",
+                  "customerNumber" : "CUST-20251024-000001",
+                  "crudOperation" : "U",
+                  "versionTimestamp" : "2025-01-24T10:30:00",
+                  "userId" : "user123",
+                  "email" : "updated.email@example.com",
+                  "firstName" : "John",
+                  "lastName" : "Doe",
+                  "phoneNumber" : "+1234567890",
+                  "dateOfBirth" : "1990-01-15",
+                  "gender" : "Male",
+                  "nationality" : "Indian",
+                  "addressLine1" : "123 Main Street",
+                  "city" : "Mumbai",
+                  "state" : "Maharashtra",
+                  "country" : "India",
+                  "postalCode" : "400001",
+                  "customerStatus" : "ACTIVE",
+                  "kycStatus" : "COMPLETED"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "Access denied - insufficient permissions",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "400" : {
+            "description" : "Invalid request data",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "Customer profile not found",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/profiles/customer/{customerNumber}/name" : {
+      "put" : {
+        "tags" : [ "Customer Profile Management" ],
+        "summary" : "Update customer name",
+        "description" : "Updates customer name by creating a new version of the customer record (INSERT-ONLY paradigm). The original record is preserved for audit trail.",
+        "operationId" : "updateName",
+        "parameters" : [ {
+          "name" : "customerNumber",
+          "in" : "path",
+          "description" : "Customer number (e.g., CUST-20251024-000001)",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "description" : "Updated name information",
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/UpdateNameRequest"
+              },
+              "example" : {
+                "firstName" : "Jane",
+                "middleName" : "Marie",
+                "lastName" : "Smith"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "403" : {
+            "description" : "Access denied",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "Customer not found",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "400" : {
+            "description" : "Invalid name data",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "200" : {
+            "description" : "Name updated successfully",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserProfileResponse"
+                },
+                "example" : {
+                  "customerId" : "550e8400-e29b-41d4-a716-446655440000",
+                  "customerNumber" : "CUST-20251024-000001",
+                  "crudOperation" : "U",
+                  "versionTimestamp" : "2025-01-24T10:40:00",
+                  "userId" : "user123",
+                  "email" : "customer@example.com",
+                  "firstName" : "Jane",
+                  "middleName" : "Marie",
+                  "lastName" : "Smith",
+                  "phoneNumber" : "+1234567890",
+                  "customerStatus" : "ACTIVE",
+                  "kycStatus" : "COMPLETED"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/profiles/customer/{customerNumber}/identification" : {
+      "put" : {
+        "tags" : [ "Customer Profile Management" ],
+        "summary" : "Update customer identification documents",
+        "description" : "Updates customer identification documents by creating a new version of the customer record (INSERT-ONLY paradigm). The original record is preserved for audit trail.",
+        "operationId" : "updateIdentification",
+        "parameters" : [ {
+          "name" : "customerNumber",
+          "in" : "path",
+          "description" : "Customer number (e.g., CUST-20251024-000001)",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "description" : "Updated identification documents",
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/UpdateIdentificationRequest"
+              },
+              "example" : {
+                "aadharNumber" : "1234-5678-9012",
+                "panNumber" : "ABCDE1234F",
+                "passportNumber" : "K1234567",
+                "drivingLicense" : "DL-1234567890"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "403" : {
+            "description" : "Access denied",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "400" : {
+            "description" : "Invalid identification data",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "200" : {
+            "description" : "Identification documents updated successfully",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserProfileResponse"
+                },
+                "example" : {
+                  "customerId" : "550e8400-e29b-41d4-a716-446655440000",
+                  "customerNumber" : "CUST-20251024-000001",
+                  "crudOperation" : "U",
+                  "versionTimestamp" : "2025-01-24T10:45:00",
+                  "userId" : "user123",
+                  "email" : "customer@example.com",
+                  "firstName" : "John",
+                  "lastName" : "Doe",
+                  "aadharNumber" : "1234-5678-9012",
+                  "maskedAadhar" : "XXXX-XXXX-9012",
+                  "panNumber" : "ABCDE1234F",
+                  "maskedPan" : "ABXXXX34F",
+                  "passportNumber" : "K1234567",
+                  "drivingLicense" : "DL-1234567890",
+                  "customerStatus" : "ACTIVE",
+                  "kycStatus" : "COMPLETED"
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "Customer not found",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/profiles/customer/{customerNumber}/address" : {
+      "put" : {
+        "tags" : [ "Customer Profile Management" ],
+        "summary" : "Update customer address",
+        "description" : "Updates customer address by creating a new version of the customer record (INSERT-ONLY paradigm). The original record is preserved for audit trail.",
+        "operationId" : "updateAddress",
+        "parameters" : [ {
+          "name" : "customerNumber",
+          "in" : "path",
+          "description" : "Customer number (e.g., CUST-20251024-000001)",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "description" : "Updated address information",
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/UpdateAddressRequest"
+              },
+              "example" : {
+                "addressLine1" : "456 New Address Street",
+                "addressLine2" : "Apt 789",
+                "city" : "Bangalore",
+                "state" : "Karnataka",
+                "country" : "India",
+                "postalCode" : "560001"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "403" : {
+            "description" : "Access denied",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "200" : {
+            "description" : "Address updated successfully",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserProfileResponse"
+                },
+                "example" : {
+                  "customerId" : "550e8400-e29b-41d4-a716-446655440000",
+                  "customerNumber" : "CUST-20251024-000001",
+                  "crudOperation" : "U",
+                  "versionTimestamp" : "2025-01-24T10:35:00",
+                  "userId" : "user123",
+                  "email" : "customer@example.com",
+                  "firstName" : "John",
+                  "lastName" : "Doe",
+                  "addressLine1" : "456 New Address Street",
+                  "addressLine2" : "Apt 789",
+                  "city" : "Bangalore",
+                  "state" : "Karnataka",
+                  "country" : "India",
+                  "postalCode" : "560001",
+                  "customerStatus" : "ACTIVE",
+                  "kycStatus" : "COMPLETED"
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "Customer not found",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "400" : {
+            "description" : "Invalid address data",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/profiles" : {
+      "get" : {
+        "tags" : [ "Customer Profile Management" ],
+        "operationId" : "getAllProfiles",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      },
+      "post" : {
+        "tags" : [ "Customer Profile Management" ],
+        "summary" : "Create new customer profile",
+        "description" : "Creates a new customer profile with normalized data structure. This endpoint is typically called by the authentication module during user registration.",
+        "operationId" : "createProfile",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateUserProfileRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "400" : {
+            "description" : "Invalid request data or customer already exists",
+            "content" : {
+              "application/json" : { }
+            }
+          },
+          "500" : {
+            "description" : "Internal server error",
+            "content" : {
+              "application/json" : { }
+            }
+          },
+          "201" : {
+            "description" : "Customer profile created successfully",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserProfileResponse"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/profiles/user/{userId}" : {
+      "get" : {
+        "tags" : [ "Customer Profile Management" ],
+        "summary" : "Get customer profile by user ID",
+        "description" : "Retrieves customer profile information using the user ID from the authentication module. This is the primary endpoint for inter-module communication.",
+        "operationId" : "getProfileByUserId",
+        "parameters" : [ {
+          "name" : "userId",
+          "in" : "path",
+          "description" : "User ID from authentication module",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          },
+          "example" : "user123"
+        } ],
+        "responses" : {
+          "403" : {
+            "description" : "Access denied - insufficient permissions",
+            "content" : {
+              "application/json" : { }
+            }
+          },
+          "404" : {
+            "description" : "Customer profile not found",
+            "content" : {
+              "application/json" : { }
+            }
+          },
+          "200" : {
+            "description" : "Customer profile found",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserProfileResponse"
+                }
+              }
+            }
+          },
+          "500" : {
+            "description" : "Internal server error",
+            "content" : {
+              "application/json" : { }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      },
+      "delete" : {
+        "tags" : [ "Customer Profile Management" ],
+        "operationId" : "deleteProfile",
+        "parameters" : [ {
+          "name" : "userId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/profiles/user/{userId}/audit-trail" : {
+      "get" : {
+        "tags" : [ "Customer Profile Management" ],
+        "summary" : "Get customer audit trail",
+        "description" : "Returns all versions of the customer record including create, update, and delete operations for audit purposes.",
+        "operationId" : "getAuditTrail",
+        "parameters" : [ {
+          "name" : "userId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/profiles/search" : {
+      "get" : {
+        "tags" : [ "Customer Profile Management" ],
+        "operationId" : "searchProfiles",
+        "parameters" : [ {
+          "name" : "name",
+          "in" : "query",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/profiles/email/{email}" : {
+      "get" : {
+        "tags" : [ "Customer Profile Management" ],
+        "operationId" : "getProfileByEmail",
+        "parameters" : [ {
+          "name" : "email",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/customer/info" : {
+      "get" : {
+        "tags" : [ "health-controller" ],
+        "operationId" : "info",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/customer/health" : {
+      "get" : {
+        "tags" : [ "health-controller" ],
+        "operationId" : "health",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components" : {
+    "schemas" : {
+      "CreateUserProfileRequest" : {
+        "type" : "object",
+        "properties" : {
+          "userId" : {
+            "type" : "string"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "firstName" : {
+            "type" : "string"
+          },
+          "lastName" : {
+            "type" : "string"
+          },
+          "middleName" : {
+            "type" : "string"
+          },
+          "dateOfBirth" : {
+            "type" : "string"
+          },
+          "gender" : {
+            "type" : "string"
+          },
+          "nationality" : {
+            "type" : "string"
+          },
+          "phoneNumber" : {
+            "type" : "string"
+          },
+          "alternatePhone" : {
+            "type" : "string"
+          },
+          "address" : {
+            "type" : "string"
+          },
+          "addressLine1" : {
+            "type" : "string"
+          },
+          "addressLine2" : {
+            "type" : "string"
+          },
+          "city" : {
+            "type" : "string"
+          },
+          "state" : {
+            "type" : "string"
+          },
+          "country" : {
+            "type" : "string"
+          },
+          "postalCode" : {
+            "type" : "string"
+          },
+          "aadharNumber" : {
+            "type" : "string"
+          },
+          "panNumber" : {
+            "type" : "string"
+          },
+          "passportNumber" : {
+            "type" : "string"
+          },
+          "drivingLicense" : {
+            "type" : "string"
+          },
+          "occupation" : {
+            "type" : "string"
+          },
+          "employerName" : {
+            "type" : "string"
+          },
+          "annualIncome" : {
+            "type" : "number",
+            "format" : "double"
+          }
+        },
+        "description" : "Customer profile creation request"
+      },
+      "UserProfileResponse" : {
+        "type" : "object",
+        "properties" : {
+          "customerId" : {
+            "type" : "string"
+          },
+          "customerNumber" : {
+            "type" : "string"
+          },
+          "crudOperation" : {
+            "type" : "string"
+          },
+          "versionTimestamp" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "userId" : {
+            "type" : "string"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "firstName" : {
+            "type" : "string"
+          },
+          "lastName" : {
+            "type" : "string"
+          },
+          "middleName" : {
+            "type" : "string"
+          },
+          "dateOfBirth" : {
+            "type" : "string",
+            "format" : "date"
+          },
+          "gender" : {
+            "type" : "string"
+          },
+          "nationality" : {
+            "type" : "string"
+          },
+          "phoneNumber" : {
+            "type" : "string"
+          },
+          "alternatePhone" : {
+            "type" : "string"
+          },
+          "addressLine1" : {
+            "type" : "string"
+          },
+          "addressLine2" : {
+            "type" : "string"
+          },
+          "city" : {
+            "type" : "string"
+          },
+          "state" : {
+            "type" : "string"
+          },
+          "country" : {
+            "type" : "string"
+          },
+          "postalCode" : {
+            "type" : "string"
+          },
+          "maskedAadhar" : {
+            "type" : "string"
+          },
+          "maskedPan" : {
+            "type" : "string"
+          },
+          "aadharNumber" : {
+            "type" : "string"
+          },
+          "panNumber" : {
+            "type" : "string"
+          },
+          "passportNumber" : {
+            "type" : "string"
+          },
+          "drivingLicense" : {
+            "type" : "string"
+          },
+          "customerType" : {
+            "type" : "string"
+          },
+          "customerStatus" : {
+            "type" : "string"
+          },
+          "kycStatus" : {
+            "type" : "string"
+          },
+          "kycCompletionDate" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        }
+      },
+      "UpdateNameRequest" : {
+        "type" : "object",
+        "properties" : {
+          "firstName" : {
+            "type" : "string"
+          },
+          "middleName" : {
+            "type" : "string"
+          },
+          "lastName" : {
+            "type" : "string"
+          }
+        }
+      },
+      "UpdateIdentificationRequest" : {
+        "type" : "object",
+        "properties" : {
+          "aadharNumber" : {
+            "type" : "string"
+          },
+          "panNumber" : {
+            "type" : "string"
+          },
+          "passportNumber" : {
+            "type" : "string"
+          },
+          "drivingLicense" : {
+            "type" : "string"
+          }
+        }
+      },
+      "UpdateAddressRequest" : {
+        "type" : "object",
+        "properties" : {
+          "addressLine1" : {
+            "type" : "string"
+          },
+          "addressLine2" : {
+            "type" : "string"
+          },
+          "city" : {
+            "type" : "string"
+          },
+          "state" : {
+            "type" : "string"
+          },
+          "country" : {
+            "type" : "string"
+          },
+          "postalCode" : {
+            "type" : "string"
+          }
+        }
+      }
+    },
+    "securitySchemes" : {
+      "bearerAuth" : {
+        "type" : "http",
+        "description" : "JWT Authorization header using the Bearer scheme. Example: \"Authorization: Bearer {token}\"",
+        "scheme" : "bearer",
+        "bearerFormat" : "JWT"
+      }
+    }
+  }
+}
