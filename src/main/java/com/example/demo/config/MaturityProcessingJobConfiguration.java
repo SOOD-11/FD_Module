@@ -30,6 +30,7 @@ import com.example.demo.entities.FdAccount;
 import com.example.demo.enums.AccountStatus;
 import com.example.demo.events.AccountMaturedEvent;
 import com.example.demo.service.KafkaProducerService;
+import com.example.demo.time.IClockService;
 
 
 import jakarta.persistence.EntityManagerFactory;
@@ -44,11 +45,15 @@ public class MaturityProcessingJobConfiguration {
 	
 	   private final EntityManagerFactory entityManagerFactory;
 	    private final KafkaProducerService kafkaProducerService;
+	    private final IClockService clockService;
 
 	    
-	    public MaturityProcessingJobConfiguration(EntityManagerFactory entityManagerFactory, KafkaProducerService kafkaProducerService) {
+	    public MaturityProcessingJobConfiguration(EntityManagerFactory entityManagerFactory, 
+	    		KafkaProducerService kafkaProducerService,
+	    		IClockService clockService) {
 	        this.entityManagerFactory = entityManagerFactory;
 	        this.kafkaProducerService = kafkaProducerService;
+	        this.clockService = clockService;
 	    }
 	    @Bean
 	    public JpaPagingItemReader<FdAccount> maturityReader() {
@@ -58,7 +63,7 @@ public class MaturityProcessingJobConfiguration {
 	                .queryString("SELECT a FROM FdAccount a WHERE a.status = :status AND a.maturityDate <= :today")
 	                .parameterValues(Map.of(
 	                        "status", AccountStatus.ACTIVE,
-	                        "today", LocalDate.now()
+	                        "today", clockService.getLogicalDate()
 	                ))
 	                .pageSize(100)
 	                .build();
@@ -137,8 +142,8 @@ public class MaturityProcessingJobConfiguration {
 	        newAccount.setTermInMonths(originalAccount.getTermInMonths());
 	        newAccount.setInterestRate(new BigDecimal("6.50")); // Placeholder for prevailing rate
 	        newAccount.setPrincipalAmount(originalAccount.getMaturityAmount());
-	        newAccount.setEffectiveDate(LocalDate.now());
-	        newAccount.setMaturityDate(LocalDate.now().plusMonths(newAccount.getTermInMonths()));
+	        newAccount.setEffectiveDate(clockService.getLogicalDate());
+	        newAccount.setMaturityDate(clockService.getLogicalDate().plusMonths(newAccount.getTermInMonths()));
 	        
 	      
 	        BigDecimal rateAsDecimal = newAccount.getInterestRate().divide(new BigDecimal("100"), 10, BigDecimal.ROUND_HALF_UP);

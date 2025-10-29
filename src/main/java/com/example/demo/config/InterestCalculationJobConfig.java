@@ -25,6 +25,7 @@ import com.example.demo.entities.FdTransaction;
 import com.example.demo.enums.AccountStatus;
 import com.example.demo.enums.TransactionType;
 import com.example.demo.repository.FdTransactionRepository;
+import com.example.demo.time.IClockService;
 
 import jakarta.persistence.EntityManagerFactory;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +35,9 @@ import lombok.extern.slf4j.Slf4j;
 public class InterestCalculationJobConfig {
 	@Autowired
     private FdTransactionRepository transactionRepository;
+	
+	@Autowired
+    private IClockService clockService;
 
     // 1. READER: Reads FdAccount entities from the database page by page.
     @Bean
@@ -65,7 +69,7 @@ public class InterestCalculationJobConfig {
                 transaction.setFdAccount(account);
                 transaction.setTransactionType(TransactionType.INTEREST_ACCRUAL);
                 transaction.setAmount(interestAmount);
-                transaction.setTransactionDate(LocalDateTime.now());
+                transaction.setTransactionDate(clockService.getLogicalDateTime());
                 transaction.setDescription("Daily interest accrual.");
                 transaction.setTransactionReference(UUID.randomUUID().toString());
                 log.info("Processed account: {}, Calculated interest: {}", account.getAccountNumber(), interestAmount);

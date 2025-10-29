@@ -43,8 +43,9 @@ public class FdAccountBalance {
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
     
+    // Note: Timestamps should be set explicitly in service layer using IClockService
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt = LocalDateTime.now();
+    private LocalDateTime createdAt;
     
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;

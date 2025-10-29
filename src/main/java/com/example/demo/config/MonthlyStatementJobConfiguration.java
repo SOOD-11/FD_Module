@@ -15,6 +15,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import com.example.demo.service.StatementService;
+import com.example.demo.time.IClockService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 public class MonthlyStatementJobConfiguration {
     
     private final StatementService statementService;
+    private final IClockService clockService;
     
     @Bean
     public Job monthlyStatementJob(JobRepository jobRepository, Step monthlyStatementStep) {
@@ -49,7 +51,7 @@ public class MonthlyStatementJobConfiguration {
             log.info("Starting monthly statement generation batch job");
             
             // Calculate previous month's date range
-            LocalDate today = LocalDate.now();
+            LocalDate today = clockService.getLogicalDate();
             LocalDate firstDayOfLastMonth = today.minusMonths(1).withDayOfMonth(1);
             LocalDate lastDayOfLastMonth = today.withDayOfMonth(1).minusDays(1);
             

@@ -135,14 +135,22 @@ public class FdAccount {
     @OneToMany(mappedBy = "fdAccount", cascade = CascadeType.ALL)
     private List<FdTransaction> transactions;
 
+    // Note: Timestamps are set explicitly in service layer using IClockService
+    // to enable testing with logical clock
     @PrePersist
     protected void onCreate() {
-        createdAt = LocalDateTime.now();
+        // createdAt should be set by service layer before persisting
+        if (createdAt == null) {
+            throw new IllegalStateException("createdAt must be set before persisting FdAccount");
+        }
     }
 
     @PreUpdate
     protected void onUpdate() {
-        updatedAt = LocalDateTime.now();
+        // updatedAt should be set by service layer before updating
+        if (updatedAt == null) {
+            throw new IllegalStateException("updatedAt must be set before updating FdAccount");
+        }
     }
 
     // Getters and Setters

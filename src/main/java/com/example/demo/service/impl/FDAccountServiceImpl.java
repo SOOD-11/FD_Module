@@ -42,6 +42,7 @@ import com.example.demo.service.FDAccountService;
 import com.example.demo.service.FDCalculationService;
 import com.example.demo.service.KafkaProducerService;
 import com.example.demo.service.ProductService;
+import com.example.demo.time.IClockService;
 import com.example.demo.util.AccountNumberGenerator;
 
 import lombok.RequiredArgsConstructor;
@@ -61,6 +62,7 @@ public class FDAccountServiceImpl implements FDAccountService{
     private final FDCalculationService fdCalculationService;
     private final ProductService productService;
     private final FdAccountBalanceRepository balanceRepository;
+    private final IClockService clockService;
 
     @Override
     public FDAccountView createAccount(CreateFDAccountRequest request, String customerId) {
@@ -78,30 +80,22 @@ public class FDAccountServiceImpl implements FDAccountService{
         log.info("Fetched product details: currency={}, interestType={}, compoundingFrequency={}", 
                  product.getCurrency(), product.getInterestType(), product.getCompoundingFrequency());
 
-        // Step 3: Generate account number
-        String accountNumber = accountNumberGenerator.generate();
-
-        // Step 4: Calculate term in months from effective date to maturity date
-        LocalDate effectiveDate = LocalDate.now();
+        // Step 3: Calculate term in months from effective date to maturity date
+        LocalDate effectiveDate = clockService.getLogicalDate();
         LocalDate maturityDate = calculation.getMaturityDate();
         Integer termInMonths = (int) ChronoUnit.MONTHS.between(effectiveDate, maturityDate);
 
-        // Step 5: Get principal amount from calculation response
+        // Step 4: Get principal amount from calculation response
         BigDecimal principalAmount = calculation.getPrincipalAmount();
 
-        // Step 6: Build FDAccount entity
+        // Step 5: Build FD Account entity
         FdAccount fdAccount = new FdAccount();
-        fdAccount.setAccountNumber(accountNumber);
+        fdAccount.setAccountNumber(accountNumberGenerator.generate());
         fdAccount.setAccountName(request.accountName());
         fdAccount.setProductCode(calculation.getProductCode());
-        fdAccount.setStatus(AccountStatus.ACTIVE);
-        fdAccount.setTermInMonths(termInMonths);
-        fdAccount.setInterestRate(calculation.getEffectiveRate());
-        fdAccount.setPrincipalAmount(principalAmount);
-        fdAccount.setMaturityAmount(calculation.getMaturityValue());
         fdAccount.setEffectiveDate(effectiveDate);
-        fdAccount.setMaturityDate(maturityDate);
-        fdAccount.setMaturityInstruction(MaturityInstruction.PAYOUT_TO_LINKED_ACCOUNT);
+        fdAccount.setCreatedAt(clockService.getLogicalDateTime());
+        fdAccount.setUpdatedAt(clockService.getLogicalDateTime());
         
         // Set fields from FD Calculation Service
         fdAccount.setCalcId(calculation.getCalcId());
@@ -120,17 +114,17 @@ public class FDAccountServiceImpl implements FDAccountService{
         fdAccount.setInterestType(product.getInterestType());
         fdAccount.setCompoundingFrequency(product.getCompoundingFrequency());
 
-        // Step 7: Build AccountHolder entity (using customerId from JWT)
+        // Step 6: Build AccountHolder entity (using customerId from JWT)
         Accountholder owner = new Accountholder();
         owner.setCustomerId(customerId);
         owner.setRoleType(RoleType.OWNER);
         owner.setOwnershipPercentage(new BigDecimal("100.00"));
 
-        // Step 8: Build initial Transaction entity
+        // Step 7: Build initial Transaction entity
         FdTransaction initialDeposit = new FdTransaction();
         initialDeposit.setTransactionType(TransactionType.PRINCIPAL_DEPOSIT);
         initialDeposit.setAmount(principalAmount);
-        initialDeposit.setTransactionDate(LocalDateTime.now());
+        initialDeposit.setTransactionDate(clockService.getLogicalDateTime());
         initialDeposit.setTransactionReference(UUID.randomUUID().toString());
         initialDeposit.setDescription("Initial principal deposit.");
 
@@ -182,7 +176,7 @@ public class FDAccountServiceImpl implements FDAccountService{
             balance.setFdAccount(account);
             balance.setBalanceType(productBalance.getBalanceType());
             balance.setIsActive(true);
-            balance.setCreatedAt(LocalDateTime.now());
+            balance.setCreatedAt(clockService.getLogicalDateTime());
             
             // Set initial balance amount based on type
             switch (productBalance.getBalanceType()) {
@@ -226,14 +220,14 @@ public class FDAccountServiceImpl implements FDAccountService{
             event.setChannel(comm.getChannel());
             event.setEventType(comm.getEvent());
             event.setTemplate(comm.getTemplate());
-            event.setTimestamp(LocalDateTime.now());
+            event.setTimestamp(clockService.getLogicalDateTime());
             
             // Prepare template variables for placeholder replacement
             event.setTemplateVariables(java.util.Map.of(
                 "CUSTOMER_NAME", customerId, // In real scenario, fetch from customer service
                 "PRODUCT_NAME", product.getProductName(),
                 "ACCOUNT_NUMBER", account.getAccountNumber(),
-                "DATE", LocalDate.now().toString(),
+                "DATE", clockService.getLogicalDate().toString(),
                 "PRINCIPAL_AMOUNT", account.getPrincipalAmount().toString(),
                 "MATURITY_DATE", account.getMaturityDate().toString()
             ));
@@ -408,7 +402,7 @@ public class FDAccountServiceImpl implements FDAccountService{
         penaltyTransaction.setFdAccount(account);
         penaltyTransaction.setTransactionType(TransactionType.PENALTY_DEBIT);
         penaltyTransaction.setAmount(inquiry.penaltyAmount());
-        penaltyTransaction.setTransactionDate(LocalDateTime.now());
+        penaltyTransaction.setTransactionDate(clockService.getLogicalDateTime());
         penaltyTransaction.setDescription("Penalty for premature withdrawal.");
         penaltyTransaction.setTransactionReference(UUID.randomUUID().toString());
 
@@ -416,7 +410,7 @@ public class FDAccountServiceImpl implements FDAccountService{
         withdrawalTransaction.setFdAccount(account);
         withdrawalTransaction.setTransactionType(TransactionType.PREMATURE_WITHDRAWAL);
         withdrawalTransaction.setAmount(inquiry.finalPayoutAmount());
-        withdrawalTransaction.setTransactionDate(LocalDateTime.now());
+        withdrawalTransaction.setTransactionDate(clockService.getLogicalDateTime());
         withdrawalTransaction.setDescription("Premature withdrawal payout.");
         withdrawalTransaction.setTransactionReference(UUID.randomUUID().toString());
         
@@ -424,7 +418,7 @@ public class FDAccountServiceImpl implements FDAccountService{
         account.getTransactions().add(withdrawalTransaction);
 
         account.setStatus(AccountStatus.PREMATURELY_CLOSED);
-        account.setClosedAt(LocalDateTime.now());
+        account.setClosedAt(clockService.getLogicalDateTime());
 
         FdAccount closedAccount = fdAccountRepository.save(account);
 
@@ -433,7 +427,7 @@ public class FDAccountServiceImpl implements FDAccountService{
                 .collect(Collectors.toList());
 
         AccountClosedEvent event = new AccountClosedEvent(
-            accountNumber, "PREMATURE_WITHDRAWAL", inquiry.finalPayoutAmount(), LocalDate.now(), UUID.randomUUID().toString(), customerIdsToNotify);
+            accountNumber, "PREMATURE_WITHDRAWAL", inquiry.finalPayoutAmount(), clockService.getLogicalDate(), UUID.randomUUID().toString(), customerIdsToNotify);
         kafkaProducerService.sendAccountClosedEvent(event);
 
         return mapToView(closedAccount);
@@ -455,7 +449,7 @@ public class FDAccountServiceImpl implements FDAccountService{
             throw new IllegalArgumentException("Inquiry can only be performed on ACTIVE accounts.");
         }
         
-        LocalDate today = LocalDate.now();
+        LocalDate today = clockService.getLogicalDate();
         LocalDate effectiveDate = account.getEffectiveDate();
         LocalDate maturityDate = account.getMaturityDate();
         

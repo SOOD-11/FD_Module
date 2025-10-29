@@ -9,6 +9,8 @@ import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import com.example.demo.time.IClockService;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -19,6 +21,7 @@ public class MonthlyStatementScheduler {
     
     private final JobLauncher jobLauncher;
     private final Job monthlyStatementJob;
+    private final IClockService clockService;
     
     /**
      * Scheduled to run on the 1st of every month at 11:00 PM (23:00)
@@ -37,7 +40,7 @@ public class MonthlyStatementScheduler {
         try {
             JobParameters jobParameters = new JobParametersBuilder()
                     .addLong("timestamp", System.currentTimeMillis())
-                    .addString("executionTime", LocalDateTime.now().toString())
+                    .addString("executionTime", clockService.getLogicalDateTime().toString())
                     .toJobParameters();
             
             jobLauncher.run(monthlyStatementJob, jobParameters);

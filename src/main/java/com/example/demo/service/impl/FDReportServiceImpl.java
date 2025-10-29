@@ -13,6 +13,7 @@ import com.example.demo.entities.FdAccount;
 import com.example.demo.enums.AccountStatus;
 import com.example.demo.repository.FdAccountRepository;
 import com.example.demo.service.FDReportService;
+import com.example.demo.time.IClockService;
 
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -28,12 +29,13 @@ public class FDReportServiceImpl implements FDReportService{
 	
 	
 	private final FdAccountRepository fdAccountRepository;
+	private final IClockService clockService;
 	
 	
 public List<FDAccountView> getAccountsMaturingWithin(int days) {
         log.info("Generating report for accounts maturing in the next {} days.", days);
 
-        LocalDate today = LocalDate.now();
+        LocalDate today = clockService.getLogicalDate();
         LocalDate futureDate = today.plusDays(days);
 
         // Use our existing repository method
