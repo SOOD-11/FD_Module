@@ -1,6 +1,8 @@
 package com.example.demo.controller;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,8 +23,10 @@ import com.example.demo.dto.FDAccountView;
 import com.example.demo.dto.FDTransactionView;
 import com.example.demo.dto.FdAccountBalanceView;
 import com.example.demo.dto.PrematureWithdrawalInquiryResponse;
+import com.example.demo.dto.StatementRequest;
 import com.example.demo.service.CustomerService;
 import com.example.demo.service.FDAccountService;
+import com.example.demo.service.StatementService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -96,10 +100,12 @@ public class FdAccountController {
 	
 	 private  FDAccountService fdAccountService;
 	 private  CustomerService customerService;
+	 private  StatementService statementService;
 
-	public FdAccountController(FDAccountService fdAccountService, CustomerService customerService) {
-	        this.fdAccountService = fdAccountService;
-	        this.customerService = customerService;
+	public FdAccountController(FDAccountService fdAccountService, CustomerService customerService, StatementService statementService) {
+		this.fdAccountService = fdAccountService;
+		this.customerService = customerService;
+		this.statementService = statementService;
 	    }
 
     @Operation(
@@ -260,9 +266,12 @@ public class FdAccountController {
         // Extract email from JWT token (sub claim)
         String email = jwt.getSubject();
         
+        // Get the JWT token value
+        String jwtToken = jwt.getTokenValue();
+        
         // Fetch customer profile from Customer Service using email
         // and get customerNumber (e.g., CUST-20251024-000001)
-        String customerNumber = customerService.getCustomerNumberByEmail(email);
+        String customerNumber = customerService.getCustomerNumberByEmail(email, jwtToken);
         
         FDAccountView createdAccount = fdAccountService.createAccount(request, customerNumber);
         return new ResponseEntity<>(createdAccount, HttpStatus.CREATED);
@@ -509,6 +518,52 @@ public class FdAccountController {
            @PathVariable("accountNumber") String accountNumber) {
        List<FdAccountBalanceView> balances = fdAccountService.getAccountBalances(accountNumber);
        return ResponseEntity.ok(balances);
+   }
+
+   @Operation(
+       summary = "Generate account statement",
+       description = "Generate and send FD account statement via Kafka to notification service for the specified period"
+   )
+   @ApiResponses(value = {
+       @ApiResponse(
+           responseCode = "200",
+           description = "Statement generation request accepted",
+           content = @Content(
+               mediaType = "application/json",
+               examples = @ExampleObject(
+                   name = "Success Response",
+                   value = """
+                   {
+                       "message": "Statement generation request accepted for account FD202401150001"
+                   }
+                   """
+               )
+           )
+       ),
+       @ApiResponse(responseCode = "404", description = "Account not found"),
+       @ApiResponse(responseCode = "400", description = "Invalid date range")
+   })
+   @PostMapping("/{accountNumber}/statement")
+   public ResponseEntity<Map<String, String>> generateStatement(
+           @Parameter(description = "FD Account number", required = true, example = "FD202401150001")
+           @PathVariable("accountNumber") String accountNumber,
+           @Parameter(description = "Statement period details", required = true)
+           @Valid @RequestBody StatementRequest request,
+           @AuthenticationPrincipal Jwt jwt) {
+       
+       // Extract user email from JWT
+       String email = jwt.getSubject();
+       
+       // Get JWT token value
+       String jwtToken = jwt.getTokenValue();
+       
+       // Generate statement
+       statementService.generateStatement(accountNumber, request.startDate(), request.endDate(), email, jwtToken);
+       
+       Map<String, String> response = new HashMap<>();
+       response.put("message", "Statement generation request accepted for account " + accountNumber);
+       
+       return ResponseEntity.ok(response);
    }
 
 }

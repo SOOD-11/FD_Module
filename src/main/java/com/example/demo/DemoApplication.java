@@ -4,9 +4,11 @@ import org.springframework.batch.core.configuration.annotation.EnableBatchProces
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.ComponentScan;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
 @EnableBatchProcessing // Add this annotation to enable Spring Batch
+@EnableScheduling // Enable scheduling for monthly statement generation
 //ADD THIS LINE to scan all our project packages
 public class DemoApplication {
 

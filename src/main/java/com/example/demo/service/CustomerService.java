@@ -1,5 +1,9 @@
 package com.example.demo.service;
 
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
@@ -26,19 +30,31 @@ public class CustomerService {
      * Fetch customer profile by email address
      * 
      * @param email Customer's email address from JWT token
+     * @param jwtToken JWT token to include in Authorization header
      * @return Customer profile with customerNumber
      */
-    public CustomerProfileResponse getCustomerByEmail(String email) {
+    public CustomerProfileResponse getCustomerByEmail(String email, String jwtToken) {
         String url = CUSTOMER_SERVICE_BASE_URL + GET_PROFILE_BY_EMAIL_PATH;
         
         log.info("Fetching customer profile for email: {}", email);
         
         try {
-            CustomerProfileResponse response = restTemplate.getForObject(
+            // Create headers with Authorization Bearer token
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Authorization", "Bearer " + jwtToken);
+            
+            HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
+            
+            // Make request with headers
+            ResponseEntity<CustomerProfileResponse> responseEntity = restTemplate.exchange(
                 url, 
+                HttpMethod.GET, 
+                requestEntity,
                 CustomerProfileResponse.class, 
                 email
             );
+            
+            CustomerProfileResponse response = responseEntity.getBody();
             
             if (response != null) {
                 log.info("Found customer: customerNumber={}, customerId={}, name={} {}", 
@@ -60,10 +76,11 @@ public class CustomerService {
      * This is what we'll use as customerId in FD Account
      * 
      * @param email Customer's email from JWT
+     * @param jwtToken JWT token to include in Authorization header
      * @return Customer number (e.g., CUST-20251024-000001)
      */
-    public String getCustomerNumberByEmail(String email) {
-        CustomerProfileResponse profile = getCustomerByEmail(email);
+    public String getCustomerNumberByEmail(String email, String jwtToken) {
+        CustomerProfileResponse profile = getCustomerByEmail(email, jwtToken);
         
         if (profile == null || profile.getCustomerNumber() == null) {
             throw new RuntimeException("Customer number not found for email: " + email);

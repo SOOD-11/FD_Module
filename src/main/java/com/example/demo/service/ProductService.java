@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import com.example.demo.config.ProductServiceConfigProperties;
+import com.example.demo.dto.ProductCommunicationResponse;
 import com.example.demo.dto.ProductDetailsResponse;
 
 import lombok.RequiredArgsConstructor;
@@ -119,6 +120,57 @@ public class ProductService {
         
         return product.getProductCharges().stream()
                 .filter(charge -> charge.getChargeCode().equals(penaltyCode))
+                .findFirst()
+                .orElse(null);
+    }
+    
+    /**
+     * Get communication templates for a product
+     * 
+     * @param productCode Product code
+     * @return Communication templates response
+     */
+    public ProductCommunicationResponse getProductCommunications(String productCode) {
+        String url = productConfig.getBaseUrl() + productConfig.getPath() + "/" + productCode + "/communications";
+        
+        log.info("Fetching product communications from: {}", url);
+        
+        try {
+            ProductCommunicationResponse response = restTemplate.getForObject(url, ProductCommunicationResponse.class);
+            
+            if (response == null) {
+                log.warn("No communication templates found for product: {}", productCode);
+                return new ProductCommunicationResponse();
+            }
+            
+            log.info("Found {} communication templates for product: {}", 
+                     response.getTotalElements(), productCode);
+            
+            return response;
+        } catch (Exception e) {
+            log.error("Failed to fetch product communications for code: {}", productCode, e);
+            throw new RuntimeException("Failed to fetch product communications: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Get specific communication template by event type
+     * 
+     * @param productCode Product code
+     * @param eventType Event type (e.g., COMM_MONTHLY_STATEMENT)
+     * @return Communication template or null if not found
+     */
+    public String getCommunicationTemplate(String productCode, String eventType) {
+        ProductCommunicationResponse response = getProductCommunications(productCode);
+        
+        if (response.getContent() == null || response.getContent().isEmpty()) {
+            log.warn("No communication templates found for product: {}", productCode);
+            return null;
+        }
+        
+        return response.getContent().stream()
+                .filter(comm -> eventType.equals(comm.getEvent()))
+                .map(ProductCommunicationResponse.Communication::getTemplate)
                 .findFirst()
                 .orElse(null);
     }
