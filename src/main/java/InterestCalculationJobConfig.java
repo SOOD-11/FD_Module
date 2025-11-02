@@ -1,6 +1,5 @@
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
 
@@ -23,6 +22,7 @@ import com.example.demo.entities.FdTransaction;
 import com.example.demo.enums.AccountStatus;
 import com.example.demo.enums.TransactionType;
 import com.example.demo.repository.FdTransactionRepository;
+import com.example.demo.time.IClockService;
 
 import jakarta.persistence.EntityManagerFactory;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +32,9 @@ import lombok.extern.slf4j.Slf4j;
 public class InterestCalculationJobConfig {
 	@Autowired
     private FdTransactionRepository transactionRepository;
+    
+    @Autowired
+    private IClockService clockService;
 
     // 1. READER: Reads FdAccount entities from the database page by page.
     @Bean
@@ -63,10 +66,12 @@ public class InterestCalculationJobConfig {
                 transaction.setFdAccount(account);
                 transaction.setTransactionType(TransactionType.INTEREST_ACCRUAL);
                 transaction.setAmount(interestAmount);
-                transaction.setTransactionDate(LocalDateTime.now());
+                // Use logical time instead of system time
+                transaction.setTransactionDate(clockService.getLogicalDateTime());
                 transaction.setDescription("Daily interest accrual.");
                 transaction.setTransactionReference(UUID.randomUUID().toString());
-                log.info("Processed account: {}, Calculated interest: {}", account.getAccountNumber(), interestAmount);
+                log.info("Processed account: {}, Calculated interest: {} at logical time: {}", 
+                        account.getAccountNumber(), interestAmount, clockService.getLogicalDateTime());
                 return transaction;
             }
             return null; // Skip accounts that earn no interest

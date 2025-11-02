@@ -31,8 +31,10 @@ import com.example.demo.enums.AccountStatus;
 import com.example.demo.enums.MaturityInstruction;
 import com.example.demo.enums.RoleType;
 import com.example.demo.enums.TransactionType;
+import com.example.demo.events.AccountAlertEvent;
 import com.example.demo.events.AccountClosedEvent;
 import com.example.demo.events.AccountCreatedEvent;
+import com.example.demo.events.AccountMaturedEvent;
 import com.example.demo.events.CommunicationEvent;
 import com.example.demo.exception.ResourceNotFoundException;
 import com.example.demo.repository.FdAccountBalanceRepository;
@@ -150,6 +152,23 @@ public class FDAccountServiceImpl implements FDAccountService{
                 UUID.randomUUID().toString()
         );
         kafkaProducerService.sendAccountCreatedEvent(event);
+        
+        // Step 11b: Send alert event for new account creation
+        AccountAlertEvent alertEvent = new AccountAlertEvent(
+                savedAccount.getAccountNumber(),
+                AccountAlertEvent.AlertType.ACCOUNT_CREATED,
+                String.format("New FD account created: %s with principal amount: %s", 
+                        savedAccount.getAccountNumber(), savedAccount.getPrincipalAmount()),
+                customerId,
+                clockService.getLogicalDateTime(),
+                UUID.randomUUID().toString(),
+                String.format("Product: %s, Maturity Date: %s, Interest Rate: %s%%", 
+                        savedAccount.getProductCode(), 
+                        savedAccount.getMaturityDate(),
+                        savedAccount.getInterestRate())
+        );
+        kafkaProducerService.sendAlertEvent(alertEvent);
+        log.info("Alert sent for new account creation: {}", savedAccount.getAccountNumber());
         
         // Step 12: Send communication events based on product configuration
         sendCommunicationEvents(savedAccount, product, customerId, "COMM_OPENING");
@@ -302,11 +321,29 @@ public class FDAccountServiceImpl implements FDAccountService{
 
         // 4. Add the new holder to the account's list of holders
         account.getAccountHolders().add(newHolder);
+        
+        // 5. Update timestamp for modification tracking
+        account.setUpdatedAt(clockService.getLogicalDateTime());
 
-        // 5. Save the parent account. Due to CascadeType.ALL, this will also save the new holder.
+        // 6. Save the parent account. Due to CascadeType.ALL, this will also save the new holder.
         FdAccount updatedAccount = fdAccountRepository.save(account);
+        
+        // 7. Send alert event for account modification (account holder added)
+        AccountAlertEvent alertEvent = new AccountAlertEvent(
+                updatedAccount.getAccountNumber(),
+                AccountAlertEvent.AlertType.ACCOUNT_HOLDER_ADDED,
+                String.format("Account holder added to account %s: Customer %s with role %s", 
+                        accountNumber, request.customerId(), request.roleType()),
+                request.customerId(),
+                clockService.getLogicalDateTime(),
+                UUID.randomUUID().toString(),
+                String.format("Role: %s, Ownership: %s%%", 
+                        request.roleType(), request.ownershipPercentage())
+        );
+        kafkaProducerService.sendAlertEvent(alertEvent);
+        log.info("Alert sent for account holder addition: {} on account {}", request.customerId(), accountNumber);
 
-        // 6. Map the updated entity to a DTO and return it
+        // 8. Map the updated entity to a DTO and return it
         return mapToView(updatedAccount);
     }
     
@@ -419,6 +456,7 @@ public class FDAccountServiceImpl implements FDAccountService{
 
         account.setStatus(AccountStatus.PREMATURELY_CLOSED);
         account.setClosedAt(clockService.getLogicalDateTime());
+        account.setUpdatedAt(clockService.getLogicalDateTime());
 
         FdAccount closedAccount = fdAccountRepository.save(account);
 
@@ -429,6 +467,20 @@ public class FDAccountServiceImpl implements FDAccountService{
         AccountClosedEvent event = new AccountClosedEvent(
             accountNumber, "PREMATURE_WITHDRAWAL", inquiry.finalPayoutAmount(), clockService.getLogicalDate(), UUID.randomUUID().toString(), customerIdsToNotify);
         kafkaProducerService.sendAccountClosedEvent(event);
+        
+        // Send alert event for account status change (prematurely closed)
+        AccountAlertEvent alertEvent = new AccountAlertEvent(
+                closedAccount.getAccountNumber(),
+                AccountAlertEvent.AlertType.ACCOUNT_STATUS_CHANGED,
+                String.format("Account %s status changed to PREMATURELY_CLOSED", accountNumber),
+                customerIdsToNotify.isEmpty() ? "SYSTEM" : customerIdsToNotify.get(0),
+                clockService.getLogicalDateTime(),
+                UUID.randomUUID().toString(),
+                String.format("Penalty: %s, Final Payout: %s, Closure Reason: Premature Withdrawal", 
+                        inquiry.penaltyAmount(), inquiry.finalPayoutAmount())
+        );
+        kafkaProducerService.sendAlertEvent(alertEvent);
+        log.info("Alert sent for account status change: {} changed to PREMATURELY_CLOSED", accountNumber);
 
         return mapToView(closedAccount);
     }

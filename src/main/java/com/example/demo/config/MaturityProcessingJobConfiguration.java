@@ -28,6 +28,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import com.example.demo.entities.Accountholder;
 import com.example.demo.entities.FdAccount;
 import com.example.demo.enums.AccountStatus;
+import com.example.demo.events.AccountAlertEvent;
 import com.example.demo.events.AccountMaturedEvent;
 import com.example.demo.service.KafkaProducerService;
 import com.example.demo.time.IClockService;
@@ -98,6 +99,21 @@ public class MaturityProcessingJobConfiguration {
 	                            customerIdsToNotify
 	                    );
 	                    kafkaProducerService.sendAccountMaturedEvent(event);
+	                    
+	                    // Send alert for account status change to MATURED
+	                    AccountAlertEvent alertEvent = new AccountAlertEvent(
+	                            account.getAccountNumber(),
+	                            AccountAlertEvent.AlertType.ACCOUNT_STATUS_CHANGED,
+	                            String.format("Account %s has matured", account.getAccountNumber()),
+	                            customerIdsToNotify.isEmpty() ? "SYSTEM" : customerIdsToNotify.get(0),
+	                            clockService.getLogicalDateTime(),
+	                            UUID.randomUUID().toString(),
+	                            String.format("Maturity Amount: %s, Maturity Date: %s, Instruction: %s", 
+	                                    account.getMaturityAmount(), 
+	                                    account.getMaturityDate(),
+	                                    account.getMaturityInstruction())
+	                    );
+	                    kafkaProducerService.sendAlertEvent(alertEvent);
 	                    break;
 	            }
 	            return new MaturityProcessingResult(account, newRenewedAccount);
@@ -164,6 +180,27 @@ public class MaturityProcessingJobConfiguration {
 	            newHolders.add(newHolder);
 	        }
 	        newAccount.setAccountHolders(newHolders);
+	        
+	        // Send alert for renewed account creation
+	        List<String> customerIds = newHolders.stream()
+	                .map(Accountholder::getCustomerId)
+	                .collect(Collectors.toList());
+	        
+	        AccountAlertEvent alertEvent = new AccountAlertEvent(
+	                newAccount.getAccountNumber(),
+	                AccountAlertEvent.AlertType.ACCOUNT_CREATED,
+	                String.format("FD account %s renewed from matured account %s", 
+	                        newAccount.getAccountNumber(), originalAccount.getAccountNumber()),
+	                customerIds.isEmpty() ? "SYSTEM" : customerIds.get(0),
+	                clockService.getLogicalDateTime(),
+	                UUID.randomUUID().toString(),
+	                String.format("Original Account: %s, New Principal: %s, New Maturity Date: %s", 
+	                        originalAccount.getAccountNumber(),
+	                        newAccount.getPrincipalAmount(), 
+	                        newAccount.getMaturityDate())
+	        );
+	        kafkaProducerService.sendAlertEvent(alertEvent);
+	        log.info("Alert sent for renewed account creation: {}", newAccount.getAccountNumber());
 	        
 	        return newAccount;
 	    }

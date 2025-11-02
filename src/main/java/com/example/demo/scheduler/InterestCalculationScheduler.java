@@ -15,43 +15,43 @@ import lombok.extern.slf4j.Slf4j;
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class MonthlyStatementScheduler {
+public class InterestCalculationScheduler {
     
     private final JobLauncher jobLauncher;
-    private final Job monthlyStatementJob;
+    private final Job interestCalculationJob;
     private final IClockService clockService;
     
     /**
-     * Scheduled to run on the 1st of every month at 11:00 PM (23:00)
-     * Cron expression: "0 0 23 1 * ?" 
+     * Scheduled to run daily at midnight (00:00)
+     * Cron expression: "0 0 0 * * ?" 
      * - Second: 0
      * - Minute: 0
-     * - Hour: 23 (11 PM)
-     * - Day of month: 1 (first day)
+     * - Hour: 0 (midnight)
+     * - Day of month: * (every day)
      * - Month: * (every month)
      * - Day of week: ? (don't care)
      * 
-     * Note: Uses logical clock for job execution time tracking
+     * Note: Uses logical clock for interest calculation timing
      */
-    @Scheduled(cron = "0 0 23 1 * ?", zone = "UTC")
-    public void generateMonthlyStatements() {
-        log.info("Starting scheduled monthly statement generation job at logical time: {}", 
+    @Scheduled(cron = "0 0 0 * * ?", zone = "UTC")
+    public void calculateDailyInterest() {
+        log.info("Starting scheduled daily interest calculation job at logical time: {}", 
                 clockService.getLogicalDateTime());
         
         try {
-            // Use logical time for job parameters to ensure consistency with time-based operations
+            // Use logical time for job parameters to ensure time consistency
             JobParameters jobParameters = new JobParametersBuilder()
                     .addLong("logicalTimestamp", clockService.getLogicalInstant().toEpochMilli())
                     .addString("logicalExecutionTime", clockService.getLogicalDateTime().toString())
                     .addString("logicalDate", clockService.getLogicalDate().toString())
                     .toJobParameters();
             
-            jobLauncher.run(monthlyStatementJob, jobParameters);
+            jobLauncher.run(interestCalculationJob, jobParameters);
             
-            log.info("Monthly statement generation job completed successfully at logical time: {}", 
+            log.info("Daily interest calculation job completed successfully at logical time: {}", 
                     clockService.getLogicalDateTime());
         } catch (Exception e) {
-            log.error("Failed to execute monthly statement generation job at logical time: {}", 
+            log.error("Failed to execute daily interest calculation job at logical time: {}", 
                     clockService.getLogicalDateTime(), e);
         }
     }

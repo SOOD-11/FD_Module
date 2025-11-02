@@ -4,6 +4,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
 import com.example.demo.dto.StatementNotificationRequest;
+import com.example.demo.events.AccountAlertEvent;
 import com.example.demo.events.AccountClosedEvent;
 import com.example.demo.events.AccountCreatedEvent;
 import com.example.demo.events.AccountMaturedEvent;
@@ -22,6 +23,7 @@ public class KafkaProducerService {
 	   private static final String CLOSED_TOPIC = "fd.account.closed"; // Topic for closed accounts
 	   private static final String COMMUNICATION_TOPIC = "fd.communication"; // Topic for communications
 	   private static final String STATEMENT_TOPIC = "statement"; // Topic for statements
+	   private static final String ALERT_TOPIC = "alert"; // Topic for account alerts
 	   private final KafkaTemplate<String, Object> kafkaTemplate;
 	    
 
@@ -95,6 +97,20 @@ public class KafkaProducerService {
 	                this.kafkaTemplate.send(STATEMENT_TOPIC, request.accountDetails().accountNumber(), request);
 	            } catch (Exception e) {
 	                log.error("Failed to send statement notification to Kafka", e);
+	            }
+	        }
+	        
+	        /**
+	         * Send alert event to Kafka
+	         * Used for notifying when accounts are created or modified
+	         */
+	        public void sendAlertEvent(AccountAlertEvent event) {
+	            log.info("Publishing alert event to topic {}: type={}, account={}", 
+	                     ALERT_TOPIC, event.alertType(), event.accountNumber());
+	            try {
+	                this.kafkaTemplate.send(ALERT_TOPIC, event.accountNumber(), event);
+	            } catch (Exception e) {
+	                log.error("Failed to send alert event to Kafka", e);
 	            }
 	        }
 }

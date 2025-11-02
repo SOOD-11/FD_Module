@@ -91,13 +91,21 @@ public class SystemTimeAdminController {
     })
     @GetMapping("/current")
     public ResponseEntity<Map<String, Object>> getCurrentLogicalTime() {
+        Instant logicalInstant = logicalClock.getLogicalInstant();
+        
         Map<String, Object> response = new HashMap<>();
-        response.put("logicalDate", logicalClock.getLogicalDate().toString());
-        response.put("logicalDateTime", logicalClock.getLogicalDateTime().toString());
-        response.put("logicalInstant", logicalClock.getLogicalInstant().toString());
+        // Return both UTC and local timezone info
+        response.put("logicalInstant", logicalInstant.toString());
+        response.put("logicalDateTimeUTC", logicalInstant.atZone(java.time.ZoneId.of("UTC")).toLocalDateTime().toString());
+        response.put("logicalDateUTC", logicalInstant.atZone(java.time.ZoneId.of("UTC")).toLocalDate().toString());
+        
+        response.put("logicalDateTimeLocal", logicalClock.getLogicalDateTime().toString());
+        response.put("logicalDateLocal", logicalClock.getLogicalDate().toString());
+        response.put("systemTimezone", java.time.ZoneId.systemDefault().toString());
+        
         response.put("message", "Current logical time");
         
-        log.info("Time query - Current logical time: {}", logicalClock.getLogicalDateTime());
+        log.info("Time query - Current logical time: {} (UTC)", logicalInstant);
         
         return ResponseEntity.ok(response);
     }
@@ -140,13 +148,22 @@ public class SystemTimeAdminController {
             Instant newTime = Instant.parse(request.newLogicalInstant);
             logicalClock.setLogicalTime(newTime);
             
+            Instant logicalInstant = logicalClock.getLogicalInstant();
+            
             Map<String, Object> response = new HashMap<>();
-            response.put("newLogicalDate", logicalClock.getLogicalDate().toString());
-            response.put("newLogicalDateTime", logicalClock.getLogicalDateTime().toString());
-            response.put("newLogicalInstant", logicalClock.getLogicalInstant().toString());
+            // Return date in UTC to avoid timezone confusion
+            response.put("newLogicalDateUTC", logicalInstant.atZone(java.time.ZoneId.of("UTC")).toLocalDate().toString());
+            response.put("newLogicalDateTimeUTC", logicalInstant.atZone(java.time.ZoneId.of("UTC")).toLocalDateTime().toString());
+            response.put("newLogicalInstant", logicalInstant.toString());
+            
+            // Also include local timezone info for reference
+            response.put("newLogicalDateLocal", logicalClock.getLogicalDate().toString());
+            response.put("newLogicalDateTimeLocal", logicalClock.getLogicalDateTime().toString());
+            response.put("systemTimezone", java.time.ZoneId.systemDefault().toString());
+            
             response.put("message", "Logical time set successfully");
             
-            log.warn("LOGICAL TIME CHANGED to {}", newTime);
+            log.warn("LOGICAL TIME CHANGED to {} (UTC)", newTime);
             
             return ResponseEntity.ok(response);
         } catch (Exception e) {
@@ -194,12 +211,21 @@ public class SystemTimeAdminController {
             LocalDate newDate = LocalDate.parse(request.newLogicalDate);
             logicalClock.setLogicalDate(newDate);
             
-            Map<String, Object> response = new HashMap<>();
-            response.put("newLogicalDate", logicalClock.getLogicalDate().toString());
-            response.put("newLogicalDateTime", logicalClock.getLogicalDateTime().toString());
-            response.put("message", "Logical date set successfully");
+            Instant logicalInstant = logicalClock.getLogicalInstant();
             
-            log.warn("LOGICAL DATE CHANGED to {}", newDate);
+            Map<String, Object> response = new HashMap<>();
+            // Return both UTC and local timezone info
+            response.put("newLogicalInstant", logicalInstant.toString());
+            response.put("newLogicalDateTimeUTC", logicalInstant.atZone(java.time.ZoneId.of("UTC")).toLocalDateTime().toString());
+            response.put("newLogicalDateUTC", logicalInstant.atZone(java.time.ZoneId.of("UTC")).toLocalDate().toString());
+            
+            response.put("newLogicalDateTimeLocal", logicalClock.getLogicalDateTime().toString());
+            response.put("newLogicalDateLocal", logicalClock.getLogicalDate().toString());
+            response.put("systemTimezone", java.time.ZoneId.systemDefault().toString());
+            
+            response.put("message", "Logical date set successfully (set to noon UTC to avoid timezone issues)");
+            
+            log.warn("LOGICAL DATE CHANGED to {} (noon UTC)", newDate);
             
             return ResponseEntity.ok(response);
         } catch (Exception e) {
@@ -244,14 +270,23 @@ public class SystemTimeAdminController {
             Duration duration = Duration.ofDays(request.days).plusHours(request.hours);
             logicalClock.advanceTime(duration);
             
+            Instant logicalInstant = logicalClock.getLogicalInstant();
+            
             Map<String, Object> response = new HashMap<>();
             response.put("advancedBy", duration.toString());
-            response.put("newLogicalDate", logicalClock.getLogicalDate().toString());
-            response.put("newLogicalDateTime", logicalClock.getLogicalDateTime().toString());
-            response.put("newLogicalInstant", logicalClock.getLogicalInstant().toString());
+            
+            // Return both UTC and local timezone info
+            response.put("newLogicalInstant", logicalInstant.toString());
+            response.put("newLogicalDateTimeUTC", logicalInstant.atZone(java.time.ZoneId.of("UTC")).toLocalDateTime().toString());
+            response.put("newLogicalDateUTC", logicalInstant.atZone(java.time.ZoneId.of("UTC")).toLocalDate().toString());
+            
+            response.put("newLogicalDateTimeLocal", logicalClock.getLogicalDateTime().toString());
+            response.put("newLogicalDateLocal", logicalClock.getLogicalDate().toString());
+            response.put("systemTimezone", java.time.ZoneId.systemDefault().toString());
+            
             response.put("message", "Logical time advanced successfully");
             
-            log.warn("LOGICAL TIME ADVANCED by {} to {}", duration, logicalClock.getLogicalDateTime());
+            log.warn("LOGICAL TIME ADVANCED by {} to {} (UTC)", duration, logicalInstant);
             
             return ResponseEntity.ok(response);
         } catch (Exception e) {
@@ -291,13 +326,21 @@ public class SystemTimeAdminController {
     public ResponseEntity<Map<String, Object>> resetToSystemTime() {
         logicalClock.resetToSystemTime();
         
+        Instant logicalInstant = logicalClock.getLogicalInstant();
+        
         Map<String, Object> response = new HashMap<>();
-        response.put("newLogicalDate", logicalClock.getLogicalDate().toString());
-        response.put("newLogicalDateTime", logicalClock.getLogicalDateTime().toString());
-        response.put("newLogicalInstant", logicalClock.getLogicalInstant().toString());
+        // Return both UTC and local timezone info
+        response.put("newLogicalInstant", logicalInstant.toString());
+        response.put("newLogicalDateTimeUTC", logicalInstant.atZone(java.time.ZoneId.of("UTC")).toLocalDateTime().toString());
+        response.put("newLogicalDateUTC", logicalInstant.atZone(java.time.ZoneId.of("UTC")).toLocalDate().toString());
+        
+        response.put("newLogicalDateTimeLocal", logicalClock.getLogicalDateTime().toString());
+        response.put("newLogicalDateLocal", logicalClock.getLogicalDate().toString());
+        response.put("systemTimezone", java.time.ZoneId.systemDefault().toString());
+        
         response.put("message", "Logical time reset to system time");
         
-        log.warn("LOGICAL TIME RESET to system time: {}", logicalClock.getLogicalDateTime());
+        log.warn("LOGICAL TIME RESET to system time: {} (UTC)", logicalInstant);
         
         return ResponseEntity.ok(response);
     }
