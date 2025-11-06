@@ -22,6 +22,12 @@ public record AccountAlertEvent(
     @JsonProperty("customer_id")
     String customerId,
     
+    @JsonProperty("email")
+    String email,
+    
+    @JsonProperty("phone_number")
+    String phoneNumber,
+    
     @JsonProperty("timestamp")
     LocalDateTime timestamp,
     

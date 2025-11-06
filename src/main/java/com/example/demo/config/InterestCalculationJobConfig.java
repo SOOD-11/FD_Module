@@ -20,11 +20,15 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.transaction.PlatformTransactionManager;
 
+import com.example.demo.entities.Accountholder;
 import com.example.demo.entities.FdAccount;
 import com.example.demo.entities.FdTransaction;
 import com.example.demo.enums.AccountStatus;
 import com.example.demo.enums.TransactionType;
+import com.example.demo.events.AccountAlertEvent;
 import com.example.demo.repository.FdTransactionRepository;
+import com.example.demo.service.CustomerService;
+import com.example.demo.service.KafkaProducerService;
 import com.example.demo.time.IClockService;
 
 import jakarta.persistence.EntityManagerFactory;
@@ -38,6 +42,12 @@ public class InterestCalculationJobConfig {
 	
 	@Autowired
     private IClockService clockService;
+	
+	@Autowired
+    private KafkaProducerService kafkaProducerService;
+	
+	@Autowired
+    private CustomerService customerService;
 
     // 1. READER: Reads FdAccount entities from the database page by page.
     @Bean
@@ -79,13 +89,71 @@ public class InterestCalculationJobConfig {
         };
     }
 
-    // 3. WRITER: Saves the created transactions to the database in a batch.
+    // 3. WRITER: Saves the created transactions to the database in a batch and sends alerts.
     @Bean
     public ItemWriter<FdTransaction> interestCalculationWriter() {
         return transactions -> {
             log.info("Writing {} new interest transactions to the database.", transactions.size());
             transactionRepository.saveAll(transactions);
+            
+            // Send alert for each transaction
+            for (FdTransaction transaction : transactions) {
+                sendTransactionAlert(transaction, transaction.getFdAccount());
+            }
         };
+    }
+    
+    /**
+     * Helper method to send transaction alert
+     */
+    private void sendTransactionAlert(FdTransaction transaction, FdAccount account) {
+        // Get primary account holder (owner)
+        String customerId = account.getAccountHolders().isEmpty() 
+                ? "SYSTEM" 
+                : account.getAccountHolders().get(0).getCustomerId();
+        
+        // Fetch customer email and phone number
+        String customerEmail = null;
+        String customerPhoneNumber = null;
+        
+        try {
+            customerEmail = customerService.getEmailByCustomerNumber(customerId);
+            customerPhoneNumber = customerService.getPhoneByCustomerNumber(customerId);
+            log.debug("✅ Fetched customer contact for interest alert - Email: {}, Phone: {}", customerEmail, customerPhoneNumber);
+        } catch (Exception e) {
+            log.error("❌ Failed to fetch customer contact details for interest alert: {}", customerId, e);
+            // Continue with null values
+        }
+        
+        // Create alert message based on transaction type
+        String alertMessage = String.format("Transaction %s: +%s on account %s", 
+                transaction.getTransactionType(),
+                transaction.getAmount(),
+                account.getAccountNumber());
+        
+        String details = String.format("Transaction Type: %s, Amount: %s, Date: %s, Reference: %s, Description: %s",
+                transaction.getTransactionType(),
+                transaction.getAmount(),
+                transaction.getTransactionDate(),
+                transaction.getTransactionReference(),
+                transaction.getDescription());
+        
+        AccountAlertEvent alertEvent = new AccountAlertEvent(
+                account.getAccountNumber(),
+                AccountAlertEvent.AlertType.ACCOUNT_MODIFIED,
+                alertMessage,
+                customerId,
+                customerEmail,
+                customerPhoneNumber,
+                clockService.getLogicalDateTime(),
+                UUID.randomUUID().toString(),
+                details
+        );
+        
+        kafkaProducerService.sendAlertEvent(alertEvent);
+        log.info("✅ Transaction alert sent for account: {} - Type: {}, Amount: {} (Email: {}, Phone: {})", 
+                account.getAccountNumber(), transaction.getTransactionType(), transaction.getAmount(),
+                customerEmail, customerPhoneNumber);
     }
 
     // 4. STEP: Combines the reader, processor, and writer into a single step.

@@ -72,6 +72,17 @@ public class FDAccountServiceImpl implements FDAccountService{
     public FDAccountView createAccount(CreateFDAccountRequest request, String customerId) {
         log.info("Creating new FD account for customer: {} with calcId: {}", customerId, request.calcId());
 
+        // Step 0: Fetch customer contact details for alerts
+        String customerEmail = null;
+        String customerPhoneNumber = null;
+        try {
+            customerEmail = customerService.getEmailByCustomerNumber(customerId);
+            customerPhoneNumber = customerService.getPhoneByCustomerNumber(customerId);
+            log.info("✅ Fetched customer contact - Email: {}, Phone: {}", customerEmail, customerPhoneNumber);
+        } catch (Exception e) {
+            log.error("❌ Failed to fetch customer contact details: {}", customerId, e);
+        }
+
         // Step 1: Fetch calculation details from FD Calculation Service
         FDCalculationResponse calculation = fdCalculationService.getCalculation(request.calcId());
         log.info("Fetched calculation details: maturityValue={}, maturityDate={}, principalAmount={}", 
@@ -149,6 +160,9 @@ public class FDAccountServiceImpl implements FDAccountService{
         FdAccount savedAccount = fdAccountRepository.save(fdAccount);
         log.info("Successfully created FD account with number: {}", savedAccount.getAccountNumber());
 
+        // Step 9b: Send transaction alert for initial deposit
+        sendTransactionAlert(initialDeposit, savedAccount);
+
         // Step 10: Create balance types (product already fetched earlier)
         createAccountBalances(savedAccount, product, principalAmount);
         
@@ -169,6 +183,8 @@ public class FDAccountServiceImpl implements FDAccountService{
                 String.format("New FD account created: %s with principal amount: %s", 
                         savedAccount.getAccountNumber(), savedAccount.getPrincipalAmount()),
                 customerId,
+                customerEmail,
+                customerPhoneNumber,
                 clockService.getLogicalDateTime(),
                 UUID.randomUUID().toString(),
                 String.format("Product: %s, Maturity Date: %s, Interest Rate: %s%%", 
@@ -177,7 +193,8 @@ public class FDAccountServiceImpl implements FDAccountService{
                         savedAccount.getInterestRate())
         );
         kafkaProducerService.sendAlertEvent(alertEvent);
-        log.info("Alert sent for new account creation: {}", savedAccount.getAccountNumber());
+        log.info("Alert sent for new account creation: {} (Email: {}, Phone: {})", 
+                savedAccount.getAccountNumber(), customerEmail, customerPhoneNumber);
         
         // Step 12: Send communication events based on product configuration
         sendCommunicationEvents(savedAccount, product, customerId, "COMM_OPENING");
@@ -287,6 +304,61 @@ public class FDAccountServiceImpl implements FDAccountService{
         }
     }
     
+    /**
+     * Send alert for every transaction
+     */
+    private void sendTransactionAlert(FdTransaction transaction, FdAccount account) {
+        // Get primary account holder (owner)
+        String customerId = account.getAccountHolders().isEmpty() 
+                ? "SYSTEM" 
+                : account.getAccountHolders().get(0).getCustomerId();
+        
+        // Fetch customer email and phone number
+        String customerEmail = null;
+        String customerPhoneNumber = null;
+        
+        try {
+            customerEmail = customerService.getEmailByCustomerNumber(customerId);
+            customerPhoneNumber = customerService.getPhoneByCustomerNumber(customerId);
+            log.info("✅ Fetched customer contact for transaction alert - Email: {}, Phone: {}", customerEmail, customerPhoneNumber);
+        } catch (Exception e) {
+            log.error("❌ Failed to fetch customer contact details for transaction alert: {}", customerId, e);
+            // Continue with null values
+        }
+        
+        // Create alert message based on transaction type
+        String alertMessage = String.format("Transaction %s: %s %s on account %s", 
+                transaction.getTransactionType(),
+                transaction.getTransactionType().name().contains("DEBIT") || 
+                transaction.getTransactionType().name().contains("WITHDRAWAL") ? "-" : "+",
+                transaction.getAmount(),
+                account.getAccountNumber());
+        
+        String details = String.format("Transaction Type: %s, Amount: %s, Date: %s, Reference: %s, Description: %s",
+                transaction.getTransactionType(),
+                transaction.getAmount(),
+                transaction.getTransactionDate(),
+                transaction.getTransactionReference(),
+                transaction.getDescription());
+        
+        AccountAlertEvent alertEvent = new AccountAlertEvent(
+                account.getAccountNumber(),
+                AccountAlertEvent.AlertType.ACCOUNT_MODIFIED, // Using ACCOUNT_MODIFIED for transactions
+                alertMessage,
+                customerId,
+                customerEmail,
+                customerPhoneNumber,
+                clockService.getLogicalDateTime(),
+                UUID.randomUUID().toString(),
+                details
+        );
+        
+        kafkaProducerService.sendAlertEvent(alertEvent);
+        log.info("✅ Transaction alert sent for account: {} - Type: {}, Amount: {} (Email: {}, Phone: {})", 
+                account.getAccountNumber(), transaction.getTransactionType(), transaction.getAmount(),
+                customerEmail, customerPhoneNumber);
+    }
+    
     public FDAccountView findAccountByNumber(String accountNumber) {
         FdAccount account = fdAccountRepository.findByAccountNumber(accountNumber)
                 .orElseThrow();
@@ -358,13 +430,25 @@ public class FDAccountServiceImpl implements FDAccountService{
         // 6. Save the parent account. Due to CascadeType.ALL, this will also save the new holder.
         FdAccount updatedAccount = fdAccountRepository.save(account);
         
-        // 7. Send alert event for account modification (account holder added)
+        // 7. Fetch contact details for the new account holder
+        String holderEmail = null;
+        String holderPhone = null;
+        try {
+            holderEmail = customerService.getEmailByCustomerNumber(request.customerId());
+            holderPhone = customerService.getPhoneByCustomerNumber(request.customerId());
+        } catch (Exception e) {
+            log.error("❌ Failed to fetch contact details for new holder: {}", request.customerId(), e);
+        }
+        
+        // 8. Send alert event for account modification (account holder added)
         AccountAlertEvent alertEvent = new AccountAlertEvent(
                 updatedAccount.getAccountNumber(),
                 AccountAlertEvent.AlertType.ACCOUNT_HOLDER_ADDED,
                 String.format("Account holder added to account %s: Customer %s with role %s", 
                         accountNumber, request.customerId(), request.roleType()),
                 request.customerId(),
+                holderEmail,
+                holderPhone,
                 clockService.getLogicalDateTime(),
                 UUID.randomUUID().toString(),
                 String.format("Role: %s, Ownership: %s%%", 
@@ -489,6 +573,10 @@ public class FDAccountServiceImpl implements FDAccountService{
         account.setUpdatedAt(clockService.getLogicalDateTime());
 
         FdAccount closedAccount = fdAccountRepository.save(account);
+        
+        // Send transaction alerts for penalty and withdrawal
+        sendTransactionAlert(penaltyTransaction, closedAccount);
+        sendTransactionAlert(withdrawalTransaction, closedAccount);
 
         List<String> customerIdsToNotify = account.getAccountHolders().stream()
                 .map(Accountholder::getCustomerId)
@@ -498,12 +586,25 @@ public class FDAccountServiceImpl implements FDAccountService{
             accountNumber, "PREMATURE_WITHDRAWAL", inquiry.finalPayoutAmount(), clockService.getLogicalDate(), UUID.randomUUID().toString(), customerIdsToNotify);
         kafkaProducerService.sendAccountClosedEvent(event);
         
+        // Fetch contact details for alert
+        String primaryCustomerId = customerIdsToNotify.isEmpty() ? "SYSTEM" : customerIdsToNotify.get(0);
+        String closureEmail = null;
+        String closurePhone = null;
+        try {
+            closureEmail = customerService.getEmailByCustomerNumber(primaryCustomerId);
+            closurePhone = customerService.getPhoneByCustomerNumber(primaryCustomerId);
+        } catch (Exception e) {
+            log.error("❌ Failed to fetch contact details for closure alert: {}", primaryCustomerId, e);
+        }
+        
         // Send alert event for account status change (prematurely closed)
         AccountAlertEvent alertEvent = new AccountAlertEvent(
                 closedAccount.getAccountNumber(),
                 AccountAlertEvent.AlertType.ACCOUNT_STATUS_CHANGED,
                 String.format("Account %s status changed to PREMATURELY_CLOSED", accountNumber),
-                customerIdsToNotify.isEmpty() ? "SYSTEM" : customerIdsToNotify.get(0),
+                primaryCustomerId,
+                closureEmail,
+                closurePhone,
                 clockService.getLogicalDateTime(),
                 UUID.randomUUID().toString(),
                 String.format("Penalty: %s, Final Payout: %s, Closure Reason: Premature Withdrawal", 
