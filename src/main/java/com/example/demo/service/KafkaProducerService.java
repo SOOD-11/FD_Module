@@ -23,7 +23,7 @@ public class KafkaProducerService {
 	   private static final String CLOSED_TOPIC = "fd.account.closed"; // Topic for closed accounts
 	   private static final String COMMUNICATION_TOPIC = "fd.communication"; // Topic for communications
 	   private static final String STATEMENT_TOPIC = "statement"; // Topic for statements
-	   private static final String ALERT_TOPIC = "alert"; // Topic for account alerts
+	   private static final String ALERT_TOPIC = "alert"; // Topic for alerts
 	   private final KafkaTemplate<String, Object> kafkaTemplate;
 	    
 
@@ -84,23 +84,42 @@ public class KafkaProducerService {
 	            }
 	        }
 	        
-	        /**
-	         * Send statement notification to Kafka
-	         * Used for generating and sending FD account statements
-	         */
-	        public void sendStatementNotification(StatementNotificationRequest request) {
-	            log.info("Publishing statement notification to topic {}: account={}, type={}", 
-	                     STATEMENT_TOPIC, 
-	                     request.accountDetails().accountNumber(), 
-	                     request.statementType());
-	            try {
-	                this.kafkaTemplate.send(STATEMENT_TOPIC, request.accountDetails().accountNumber(), request);
-	            } catch (Exception e) {
-	                log.error("Failed to send statement notification to Kafka", e);
-	            }
-	        }
-	        
-	        /**
+        /**
+         * Send statement notification to Kafka statement topic
+         * Used for generating and sending FD account statements
+         */
+        public void sendStatementNotification(StatementNotificationRequest request) {
+            log.info("📤 Publishing statement notification to topic '{}': account={}, email={}, phone={}", 
+                     STATEMENT_TOPIC, 
+                     request.accountDetails().accountNumber(),
+                     request.toEmail(),
+                     request.toSms());
+            
+            log.info("📧 Statement Details - Subject: {}, PDF: {}, Period: {} to {}", 
+                     request.subject(),
+                     request.pdfFileName(),
+                     request.statementPeriod().startDate(),
+                     request.statementPeriod().endDate());
+            
+            try {
+                var result = this.kafkaTemplate.send(STATEMENT_TOPIC, request.accountDetails().accountNumber(), request);
+                result.whenComplete((sendResult, exception) -> {
+                    if (exception == null) {
+                        log.info("✅ Statement notification sent successfully to Kafka topic '{}' for account: {}", 
+                                 STATEMENT_TOPIC, request.accountDetails().accountNumber());
+                        log.info("✅ Message partition: {}, offset: {}", 
+                                 sendResult.getRecordMetadata().partition(),
+                                 sendResult.getRecordMetadata().offset());
+                    } else {
+                        log.error("❌ Failed to send statement notification to Kafka for account: {}", 
+                                  request.accountDetails().accountNumber(), exception);
+                    }
+                });
+            } catch (Exception e) {
+                log.error("❌ Exception while sending statement notification to Kafka", e);
+                throw new RuntimeException("Failed to send statement to Kafka: " + e.getMessage(), e);
+            }
+        }	        /**
 	         * Send alert event to Kafka
 	         * Used for notifying when accounts are created or modified
 	         */

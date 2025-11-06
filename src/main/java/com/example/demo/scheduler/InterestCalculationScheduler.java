@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Component
+@org.springframework.context.annotation.Profile("prod")
 @RequiredArgsConstructor
 @Slf4j
 public class InterestCalculationScheduler {
@@ -22,7 +23,7 @@ public class InterestCalculationScheduler {
     private final IClockService clockService;
     
     /**
-     * Scheduled to run daily at midnight (00:00)
+     * Scheduled to run daily at midnight (00:00 UTC)
      * Cron expression: "0 0 0 * * ?" 
      * - Second: 0
      * - Minute: 0
@@ -31,7 +32,9 @@ public class InterestCalculationScheduler {
      * - Month: * (every month)
      * - Day of week: ? (don't care)
      * 
-     * Note: Uses logical clock for interest calculation timing
+     * Note: This scheduler uses SYSTEM TIME (not logical time).
+     * Only active in PRODUCTION profile.
+     * For development/testing, use LogicalTimeSchedulerService instead.
      */
     @Scheduled(cron = "0 0 0 * * ?", zone = "UTC")
     public void calculateDailyInterest() {

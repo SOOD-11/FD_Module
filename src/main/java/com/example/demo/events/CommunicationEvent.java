@@ -19,6 +19,8 @@ public class CommunicationEvent {
     private String eventId;
     private String accountNumber;
     private String customerId;
+    private String email; // Customer email address
+    private String phoneNumber; // Customer phone number
     private String communicationType; // STATEMENT, ALERT, PROMOTIONAL, REGULATORY
     private String channel; // EMAIL, SMS, PUSH_NOTIFICATION, IN_APP
     private String eventType; // COMM_OPENING, COMM_MONTHLY_STATEMENT, etc.

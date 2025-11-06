@@ -40,6 +40,7 @@ import com.example.demo.exception.ResourceNotFoundException;
 import com.example.demo.repository.FdAccountBalanceRepository;
 import com.example.demo.repository.FdAccountRepository;
 import com.example.demo.repository.FdTransactionRepository;
+import com.example.demo.service.CustomerService;
 import com.example.demo.service.FDAccountService;
 import com.example.demo.service.FDCalculationService;
 import com.example.demo.service.KafkaProducerService;
@@ -65,6 +66,7 @@ public class FDAccountServiceImpl implements FDAccountService{
     private final ProductService productService;
     private final FdAccountBalanceRepository balanceRepository;
     private final IClockService clockService;
+    private final CustomerService customerService;
 
     @Override
     public FDAccountView createAccount(CreateFDAccountRequest request, String customerId) {
@@ -103,6 +105,11 @@ public class FDAccountServiceImpl implements FDAccountService{
         fdAccount.setCalcId(calculation.getCalcId());
         fdAccount.setResultId(calculation.getResultId());
         fdAccount.setApy(calculation.getApy());
+        fdAccount.setInterestRate(calculation.getEffectiveRate());
+        fdAccount.setPrincipalAmount(calculation.getPrincipalAmount());
+        fdAccount.setMaturityAmount(calculation.getMaturityValue());
+        fdAccount.setMaturityDate(calculation.getMaturityDate());
+        fdAccount.setMaturityInstruction(MaturityInstruction.valueOf("CLOSE"));
         fdAccount.setEffectiveRate(calculation.getEffectiveRate());
         fdAccount.setPayoutFreq(calculation.getPayoutFreq());
         fdAccount.setPayoutAmount(calculation.getPayoutAmount());
@@ -110,6 +117,8 @@ public class FDAccountServiceImpl implements FDAccountService{
         fdAccount.setCategory2Id(calculation.getCategory2Id());
         fdAccount.setTenureValue(calculation.getTenureValue());
         fdAccount.setTenureUnit(calculation.getTenureUnit());
+        fdAccount.setStatus(AccountStatus.ACTIVE);
+        fdAccount.setTermInMonths(termInMonths);
         
         // Set fields from Product Service
         fdAccount.setCurrency(product.getCurrency());
@@ -226,6 +235,24 @@ public class FDAccountServiceImpl implements FDAccountService{
             return;
         }
         
+        // Fetch customer email and phone number from Customer Service using public endpoints
+        String customerEmail = null;
+        String customerPhoneNumber = null;
+        
+        try {
+            // Get email using the public endpoint
+            customerEmail = customerService.getEmailByCustomerNumber(customerId);
+            log.info("✅ Fetched customer email for {}: {}", customerId, customerEmail);
+            
+            // Get phone using the public endpoint
+            customerPhoneNumber = customerService.getPhoneByCustomerNumber(customerId);
+            log.info("✅ Fetched customer phone for {}: {}", customerId, customerPhoneNumber);
+            
+        } catch (Exception e) {
+            log.error("❌ Failed to fetch customer contact details for customerId: {}", customerId, e);
+            // Continue with null values - communication service will handle missing contacts
+        }
+        
         for (ProductDetailsResponse.ProductCommunication comm : product.getProductCommunications()) {
             if (!comm.getEvent().equals(eventType)) {
                 continue; // Only send communications matching the event type
@@ -235,6 +262,8 @@ public class FDAccountServiceImpl implements FDAccountService{
             event.setEventId(UUID.randomUUID().toString());
             event.setAccountNumber(account.getAccountNumber());
             event.setCustomerId(customerId);
+            event.setEmail(customerEmail); // Set customer email
+            event.setPhoneNumber(customerPhoneNumber); // Set customer phone number
             event.setCommunicationType(comm.getCommunicationType());
             event.setChannel(comm.getChannel());
             event.setEventType(comm.getEvent());
@@ -252,8 +281,9 @@ public class FDAccountServiceImpl implements FDAccountService{
             ));
             
             kafkaProducerService.sendCommunicationEvent(event);
-            log.info("Sent {} communication via {} for account: {}", 
-                     comm.getCommunicationType(), comm.getChannel(), account.getAccountNumber());
+            log.info("✅ Sent {} communication via {} for account: {} (email: {}, phone: {})", 
+                     comm.getCommunicationType(), comm.getChannel(), account.getAccountNumber(),
+                     customerEmail, customerPhoneNumber);
         }
     }
     

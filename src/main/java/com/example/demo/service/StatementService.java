@@ -41,6 +41,7 @@ public class StatementService {
     private final CustomerService customerService;
     private final ProductService productService;
     private final KafkaProducerService kafkaProducerService;
+    private final BatchAuthService batchAuthService;
     
     /**
      * Generate and send statement for a specific account
@@ -61,16 +62,9 @@ public class StatementService {
         // Fetch customer details from email (either from user or account's primary holder)
         String email = userEmail != null ? userEmail : getAccountPrimaryEmail(account);
         
-        // Fetch customer profile with JWT token if available
-        CustomerProfileResponse customer;
-        if (jwtToken != null && !jwtToken.isEmpty()) {
-            customer = customerService.getCustomerByEmail(email, jwtToken);
-        } else {
-            // For batch processing, we need a system/service token or handle this differently
-            log.warn("No JWT token provided for statement generation. Using email lookup without auth.");
-            // You might want to use a service account token here in production
-            customer = customerService.getCustomerByEmail(email, "");
-        }
+        // Fetch customer profile with JWT token
+        CustomerProfileResponse customer = customerService.getCustomerByEmail(email, jwtToken);
+        log.info("Fetched customer by email: {} -> Phone: {}", email, customer.getPhoneNumber());
         
         // Build statement notification request
         StatementNotificationRequest statementRequest = buildStatementRequest(
@@ -84,27 +78,53 @@ public class StatementService {
     
     /**
      * Generate statements for all active accounts (for batch processing)
+     * Uses the SAME logic as the working /statement API endpoint
      */
     public void generateStatementsForAllAccounts(LocalDate startDate, LocalDate endDate) {
-        log.info("Generating statements for all active accounts from {} to {}", startDate, endDate);
+        log.info("🔄 Generating statements for all active accounts from {} to {}", startDate, endDate);
         
         List<FdAccount> accounts = fdAccountRepository.findAll();
         int successCount = 0;
         int failureCount = 0;
         
+        log.info("📊 Found {} accounts to process", accounts.size());
+        
+        if (accounts.isEmpty()) {
+            log.warn("⚠️ No accounts found in database! Cannot generate statements.");
+            return;
+        }
+        
+        // Get batch JWT token once for all accounts
+        String batchJwtToken = null;
+        try {
+            batchJwtToken = batchAuthService.getBatchAccessToken();
+            log.info("✅ Got batch JWT token for processing");
+        } catch (Exception e) {
+            log.error("❌ Failed to get batch JWT token. Statements will fail.", e);
+            return;
+        }
+        
         for (FdAccount account : accounts) {
             try {
-                // For batch processing, pass null JWT token
-                // In production, you should use a service account token
-                generateStatement(account.getAccountNumber(), startDate, endDate, null, null);
+                log.info("📧 Processing statement for account: {}", account.getAccountNumber());
+                
+                // Get account holder email
+                String email = getAccountPrimaryEmail(account);
+                
+                // Use the SAME generateStatement method that works in the API
+                // Now pass the batch JWT token
+                generateStatement(account.getAccountNumber(), startDate, endDate, email, batchJwtToken);
+                
                 successCount++;
+                log.info("✅ Statement sent successfully for account: {}", account.getAccountNumber());
             } catch (Exception e) {
-                log.error("Failed to generate statement for account: {}", account.getAccountNumber(), e);
+                log.error("❌ FAILED to generate statement for account: {} - ERROR: {}", 
+                         account.getAccountNumber(), e.getMessage(), e);
                 failureCount++;
             }
         }
         
-        log.info("Statement generation completed. Success: {}, Failures: {}", successCount, failureCount);
+        log.info("✅ Statement generation completed. Success: {}, Failures: {}", successCount, failureCount);
     }
     
     /**
@@ -314,10 +334,21 @@ public class StatementService {
     }
     
     private String getAccountPrimaryEmail(FdAccount account) {
-        // Try to get email from customer service using the customerId
-        // This is a fallback mechanism
-        return account.getAccountHolders().isEmpty() ? 
-                "no-reply@nexabank.com" : 
-                account.getAccountHolders().get(0).getCustomerId() + "@nexabank.com";
+        // Fetch real email from Customer Service using customerNumber
+        if (account.getAccountHolders() == null || account.getAccountHolders().isEmpty()) {
+            log.warn("No account holders found for account: {}. Using fallback email.", account.getAccountNumber());
+            return "no-reply@nexabank.com";
+        }
+        
+        String customerNumber = account.getAccountHolders().get(0).getCustomerId();
+        
+        try {
+            String email = customerService.getEmailByCustomerNumber(customerNumber);
+            log.info("✅ Fetched real email for customerNumber {}: {}", customerNumber, email);
+            return email;
+        } catch (Exception e) {
+            log.error("❌ Failed to fetch customer email for customerNumber: {}", customerNumber, e);
+            throw new RuntimeException("Cannot fetch customer email: " + e.getMessage(), e);
+        }
     }
 }

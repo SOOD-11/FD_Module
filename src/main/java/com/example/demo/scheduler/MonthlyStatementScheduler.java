@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Component
+@org.springframework.context.annotation.Profile("prod")
 @RequiredArgsConstructor
 @Slf4j
 public class MonthlyStatementScheduler {
@@ -22,7 +23,7 @@ public class MonthlyStatementScheduler {
     private final IClockService clockService;
     
     /**
-     * Scheduled to run on the 1st of every month at 11:00 PM (23:00)
+     * Scheduled to run on the 1st of every month at 11:00 PM (23:00 UTC)
      * Cron expression: "0 0 23 1 * ?" 
      * - Second: 0
      * - Minute: 0
@@ -31,7 +32,9 @@ public class MonthlyStatementScheduler {
      * - Month: * (every month)
      * - Day of week: ? (don't care)
      * 
-     * Note: Uses logical clock for job execution time tracking
+     * Note: This scheduler uses SYSTEM TIME (not logical time).
+     * Only active in PRODUCTION profile.
+     * For development/testing, use LogicalTimeSchedulerService instead.
      */
     @Scheduled(cron = "0 0 23 1 * ?", zone = "UTC")
     public void generateMonthlyStatements() {
