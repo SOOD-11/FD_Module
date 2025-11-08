@@ -34,12 +34,14 @@ public class LogicalTimeSchedulerService {
     private final Job interestCalculationJob;
     private final Job maturityProcessingJob;
     private final Job monthlyStatementJob;
+    private final Job interestPayoutJob;
     private final IClockService clockService;
     
     // Track last execution to avoid duplicate runs
     private LocalDate lastInterestCalculationDate = null;
     private LocalDate lastMaturityProcessingDate = null;
     private LocalDate lastMonthlyStatementDate = null;
+    private LocalDate lastInterestPayoutDate = null;
     
     /**
      * Checks every minute if any jobs should be triggered based on logical time.
@@ -63,6 +65,11 @@ public class LogicalTimeSchedulerService {
                 triggerInterestCalculation(logicalDateUTC);
             }
             
+            // Check and trigger interest payout (daily at 00:30 UTC - after interest calculation)
+            if (shouldTriggerInterestPayout(logicalDateUTC, logicalTimeUTC)) {
+                triggerInterestPayout(logicalDateUTC);
+            }
+            
             // Check and trigger maturity processing (daily at 01:00 UTC)
             if (shouldTriggerMaturityProcessing(logicalDateUTC, logicalTimeUTC)) {
                 triggerMaturityProcessing(logicalDateUTC);
@@ -83,6 +90,15 @@ public class LogicalTimeSchedulerService {
         // Allow a window of 00:00 to 00:59
         boolean isScheduledTime = logicalTime.getHour() == 0;
         boolean notAlreadyRun = !logicalDate.equals(lastInterestCalculationDate);
+        
+        return isScheduledTime && notAlreadyRun;
+    }
+    
+    private boolean shouldTriggerInterestPayout(LocalDate logicalDate, LocalTime logicalTime) {
+        // Trigger once per day when logical time passes 00:30
+        // Allow a window of 00:30 to 00:59 (runs after interest calculation)
+        boolean isScheduledTime = logicalTime.getHour() == 0 && logicalTime.getMinute() >= 30;
+        boolean notAlreadyRun = !logicalDate.equals(lastInterestPayoutDate);
         
         return isScheduledTime && notAlreadyRun;
     }
@@ -131,6 +147,28 @@ public class LogicalTimeSchedulerService {
                     clockService.getLogicalDateTime());
         } catch (Exception e) {
             log.error("❌ Failed to trigger interest calculation job", e);
+        }
+    }
+    
+    private void triggerInterestPayout(LocalDate logicalDate) {
+        try {
+            log.info("🕐 LOGICAL TIME SCHEDULER: Triggering interest payout at logical time: {}", 
+                    clockService.getLogicalDateTime());
+            
+            JobParameters jobParameters = new JobParametersBuilder()
+                    .addLong("logicalTimestamp", clockService.getLogicalInstant().toEpochMilli())
+                    .addString("logicalExecutionTime", clockService.getLogicalDateTime().toString())
+                    .addString("logicalDate", clockService.getLogicalDate().toString())
+                    .addString("triggeredBy", "LogicalTimeScheduler")
+                    .toJobParameters();
+            
+            jobLauncher.run(interestPayoutJob, jobParameters);
+            lastInterestPayoutDate = logicalDate;
+            
+            log.info("✅ Interest payout job completed at logical time: {}", 
+                    clockService.getLogicalDateTime());
+        } catch (Exception e) {
+            log.error("❌ Failed to trigger interest payout job", e);
         }
     }
     
@@ -187,5 +225,6 @@ public class LogicalTimeSchedulerService {
         lastInterestCalculationDate = null;
         lastMaturityProcessingDate = null;
         lastMonthlyStatementDate = null;
+        lastInterestPayoutDate = null;
     }
 }
