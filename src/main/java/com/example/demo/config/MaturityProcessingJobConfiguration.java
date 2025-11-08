@@ -30,6 +30,7 @@ import com.example.demo.entities.FdAccount;
 import com.example.demo.enums.AccountStatus;
 import com.example.demo.events.AccountAlertEvent;
 import com.example.demo.events.AccountMaturedEvent;
+import com.example.demo.service.CustomerService;
 import com.example.demo.service.KafkaProducerService;
 import com.example.demo.time.IClockService;
 
@@ -47,14 +48,17 @@ public class MaturityProcessingJobConfiguration {
 	   private final EntityManagerFactory entityManagerFactory;
 	    private final KafkaProducerService kafkaProducerService;
 	    private final IClockService clockService;
+	    private final CustomerService customerService;
 
 	    
 	    public MaturityProcessingJobConfiguration(EntityManagerFactory entityManagerFactory, 
 	    		KafkaProducerService kafkaProducerService,
-	    		IClockService clockService) {
+	    		IClockService clockService,
+	    		CustomerService customerService) {
 	        this.entityManagerFactory = entityManagerFactory;
 	        this.kafkaProducerService = kafkaProducerService;
 	        this.clockService = clockService;
+	        this.customerService = customerService;
 	    }
 	    @Bean
 	    public JpaPagingItemReader<FdAccount> maturityReader() {
@@ -100,12 +104,25 @@ public class MaturityProcessingJobConfiguration {
 	                    );
 	                    kafkaProducerService.sendAccountMaturedEvent(event);
 	                    
+	                    // Fetch customer contact details for alert
+	                    String primaryCustomerId = customerIdsToNotify.isEmpty() ? "SYSTEM" : customerIdsToNotify.get(0);
+	                    String customerEmail = null;
+	                    String customerPhone = null;
+	                    try {
+	                        customerEmail = customerService.getEmailByCustomerNumber(primaryCustomerId);
+	                        customerPhone = customerService.getPhoneByCustomerNumber(primaryCustomerId);
+	                    } catch (Exception e) {
+	                        log.error("❌ Failed to fetch contact details for maturity alert: {}", primaryCustomerId, e);
+	                    }
+	                    
 	                    // Send alert for account status change to MATURED
 	                    AccountAlertEvent alertEvent = new AccountAlertEvent(
 	                            account.getAccountNumber(),
 	                            AccountAlertEvent.AlertType.ACCOUNT_STATUS_CHANGED,
 	                            String.format("Account %s has matured", account.getAccountNumber()),
-	                            customerIdsToNotify.isEmpty() ? "SYSTEM" : customerIdsToNotify.get(0),
+	                            primaryCustomerId,
+	                            customerEmail,
+	                            customerPhone,
 	                            clockService.getLogicalDateTime(),
 	                            UUID.randomUUID().toString(),
 	                            String.format("Maturity Amount: %s, Maturity Date: %s, Instruction: %s", 
@@ -186,12 +203,25 @@ public class MaturityProcessingJobConfiguration {
 	                .map(Accountholder::getCustomerId)
 	                .collect(Collectors.toList());
 	        
+	        // Fetch customer contact details for alert
+	        String renewalCustomerId = customerIds.isEmpty() ? "SYSTEM" : customerIds.get(0);
+	        String renewalEmail = null;
+	        String renewalPhone = null;
+	        try {
+	            renewalEmail = customerService.getEmailByCustomerNumber(renewalCustomerId);
+	            renewalPhone = customerService.getPhoneByCustomerNumber(renewalCustomerId);
+	        } catch (Exception e) {
+	            log.error("❌ Failed to fetch contact details for renewal alert: {}", renewalCustomerId, e);
+	        }
+	        
 	        AccountAlertEvent alertEvent = new AccountAlertEvent(
 	                newAccount.getAccountNumber(),
 	                AccountAlertEvent.AlertType.ACCOUNT_CREATED,
 	                String.format("FD account %s renewed from matured account %s", 
 	                        newAccount.getAccountNumber(), originalAccount.getAccountNumber()),
-	                customerIds.isEmpty() ? "SYSTEM" : customerIds.get(0),
+	                renewalCustomerId,
+	                renewalEmail,
+	                renewalPhone,
 	                clockService.getLogicalDateTime(),
 	                UUID.randomUUID().toString(),
 	                String.format("Original Account: %s, New Principal: %s, New Maturity Date: %s", 
@@ -200,7 +230,8 @@ public class MaturityProcessingJobConfiguration {
 	                        newAccount.getMaturityDate())
 	        );
 	        kafkaProducerService.sendAlertEvent(alertEvent);
-	        log.info("Alert sent for renewed account creation: {}", newAccount.getAccountNumber());
+	        log.info("Alert sent for renewed account creation: {} (Email: {}, Phone: {})", 
+	                newAccount.getAccountNumber(), renewalEmail, renewalPhone);
 	        
 	        return newAccount;
 	    }

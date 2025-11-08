@@ -535,7 +535,7 @@ public class FDAccountServiceImpl implements FDAccountService{
         // Validate WITHDRAWAL transaction is allowed for this product
         boolean withdrawalAllowed = productService.isTransactionAllowed(
             account.getProductCode(), 
-            TransactionType.PREMATURE_WITHDRAWAL.name()
+            TransactionType.WITHDRAWAL.name()
         );
         
         if (!withdrawalAllowed) {
@@ -559,7 +559,7 @@ public class FDAccountServiceImpl implements FDAccountService{
 
         FdTransaction withdrawalTransaction = new FdTransaction();
         withdrawalTransaction.setFdAccount(account);
-        withdrawalTransaction.setTransactionType(TransactionType.PREMATURE_WITHDRAWAL);
+        withdrawalTransaction.setTransactionType(TransactionType.WITHDRAWAL);
         withdrawalTransaction.setAmount(inquiry.finalPayoutAmount());
         withdrawalTransaction.setTransactionDate(clockService.getLogicalDateTime());
         withdrawalTransaction.setDescription("Premature withdrawal payout.");
@@ -646,6 +646,17 @@ public class FDAccountServiceImpl implements FDAccountService{
                 accountNumber, account.getPrincipalAmount(), BigDecimal.ZERO, BigDecimal.ZERO, account.getPrincipalAmount(), today);
         }
         
+        // Fetch actual interest accrued from fd_account_balances table
+        FdAccountBalance interestBalance = balanceRepository
+                .findByFdAccount_AccountNumberAndBalanceType(accountNumber, "FD_INTEREST");
+        
+        BigDecimal actualInterestAccrued = (interestBalance != null) 
+                ? interestBalance.getBalanceAmount() 
+                : BigDecimal.ZERO;
+        
+        log.info("Fetched actual interest accrued from balance table: {} for account: {}", 
+                actualInterestAccrued, accountNumber);
+        
         // Get penalty charge from product configuration based on completion percentage
         ProductDetailsResponse.ProductCharge penaltyCharge = productService.getPenaltyCharge(
             account.getProductCode(), 
@@ -664,16 +675,20 @@ public class FDAccountServiceImpl implements FDAccountService{
             log.warn("No product penalty found, using default 1% penalty");
         }
         
+        // Calculate penalized interest (interest after applying penalty rate reduction)
         BigDecimal penaltyInterestRate = account.getInterestRate().subtract(penaltyRate);
         if (penaltyInterestRate.compareTo(BigDecimal.ZERO) < 0) {
             penaltyInterestRate = BigDecimal.ZERO;
         }
-
-        BigDecimal originalDailyRate = account.getInterestRate().divide(new BigDecimal("100"), 10, RoundingMode.HALF_UP).divide(new BigDecimal("365"), 10, RoundingMode.HALF_UP);
-        BigDecimal penaltyDailyRate = penaltyInterestRate.divide(new BigDecimal("100"), 10, RoundingMode.HALF_UP).divide(new BigDecimal("365"), 10, RoundingMode.HALF_UP);
-
-        BigDecimal originalInterestAccrued = account.getPrincipalAmount().multiply(originalDailyRate).multiply(new BigDecimal(daysActive)).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal penalizedInterestAccrued = account.getPrincipalAmount().multiply(penaltyDailyRate).multiply(new BigDecimal(daysActive)).setScale(2, RoundingMode.HALF_UP);
+        
+        // Calculate what the penalized interest would be (for payout calculation)
+        BigDecimal penaltyDailyRate = penaltyInterestRate
+                .divide(new BigDecimal("100"), 10, RoundingMode.HALF_UP)
+                .divide(new BigDecimal("365"), 10, RoundingMode.HALF_UP);
+        BigDecimal penalizedInterestAccrued = account.getPrincipalAmount()
+                .multiply(penaltyDailyRate)
+                .multiply(new BigDecimal(daysActive))
+                .setScale(2, RoundingMode.HALF_UP);
         
         // Calculate penalty amount based on charge type (PERCENTAGE or FLAT)
         BigDecimal penaltyAmount;
@@ -683,16 +698,33 @@ public class FDAccountServiceImpl implements FDAccountService{
                 .multiply(penaltyRate)
                 .divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
             log.info("Calculated percentage-based penalty: {} ({}% of principal)", penaltyAmount, penaltyRate);
+            
+            // Cap penalty at actual interest accrued from balance table
+            if (penaltyAmount.compareTo(actualInterestAccrued) > 0) {
+                log.info("Penalty {} exceeds actual interest accrued {}. Capping penalty at actual interest.", 
+                        penaltyAmount, actualInterestAccrued);
+                penaltyAmount = actualInterestAccrued;
+            }
         } else {
-            // Original calculation: difference in interest
-            penaltyAmount = originalInterestAccrued.subtract(penalizedInterestAccrued);
-            log.info("Calculated interest-based penalty: {}", penaltyAmount);
+            // Interest-based penalty: difference between actual interest and penalized interest
+            penaltyAmount = actualInterestAccrued.subtract(penalizedInterestAccrued);
+            if (penaltyAmount.compareTo(BigDecimal.ZERO) < 0) {
+                penaltyAmount = BigDecimal.ZERO;
+            }
+            log.info("Calculated interest-based penalty: {} (actual interest: {} - penalized: {})", 
+                    penaltyAmount, actualInterestAccrued, penalizedInterestAccrued);
         }
         
-        BigDecimal finalPayoutAmount = account.getPrincipalAmount().add(penalizedInterestAccrued).subtract(penaltyAmount);
+        // Final payout = principal + penalized interest - penalty
+        // Note: We use actualInterestAccrued for the interest portion, then subtract penalty
+        BigDecimal interestPayout = actualInterestAccrued.subtract(penaltyAmount);
+        if (interestPayout.compareTo(BigDecimal.ZERO) < 0) {
+            interestPayout = BigDecimal.ZERO;
+        }
+        BigDecimal finalPayoutAmount = account.getPrincipalAmount().add(interestPayout);
 
         return new PrematureWithdrawalInquiryResponse(
-            accountNumber, account.getPrincipalAmount(), penalizedInterestAccrued, penaltyAmount, finalPayoutAmount, today);
+            accountNumber, account.getPrincipalAmount(), interestPayout, penaltyAmount, finalPayoutAmount, today);
     }
 
     @Override
